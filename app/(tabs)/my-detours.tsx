@@ -11,6 +11,7 @@ import {
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
+import { FloatingNavigation } from '@/components/FloatingNavigation';
 import MapViewComponent from '@/components/MapViewComponent';
 import { decode } from '@/services/PolylineDecoder';
 import { listDetoursLocal, removeDetourLocal } from '@/services/StorageService';
@@ -198,6 +199,8 @@ export default function MyDetoursScreen() {
           </SafeAreaView>
         </View>
       </Modal>
+
+      <FloatingNavigation bottomOffset={36} />
     </SafeAreaView>
   );
 }

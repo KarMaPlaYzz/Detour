@@ -10,6 +10,7 @@ import {
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
+import { FloatingNavigation } from '@/components/FloatingNavigation';
 import InputFormComponent from '@/components/InputFormComponent';
 import MapViewComponent from '@/components/MapViewComponent';
 import SaveDetourModal from '@/components/SaveDetourModal';
@@ -168,6 +169,8 @@ export default function ExploreScreen() {
         onSave={handleSaveDetour}
         poiName={detourRoute?.poi.name}
       />
+
+      <FloatingNavigation bottomOffset={36} />
     </View>
   );
 }

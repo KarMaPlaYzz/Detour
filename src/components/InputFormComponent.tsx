@@ -9,6 +9,7 @@ import {
     TouchableOpacity,
     View,
 } from 'react-native';
+import { IconSymbol } from '../../components/ui/icon-symbol';
 
 interface InputFormComponentProps {
   onFindDetour: (start: string, end: string, interest: Interest) => void;
@@ -62,71 +63,134 @@ export default function InputFormComponent({
 
   return (
     <View style={styles.container}>
-      <Text style={styles.title}>Find a Detour</Text>
-
-      {/* Start Input */}
-      <View style={styles.inputGroup}>
-        <Text style={styles.label}>Start Address</Text>
-        
-        {currentLocation && (
-          <TouchableOpacity
-            style={styles.currentLocationButton}
-            onPress={() => {
-              setUseCurrentLocation(!useCurrentLocation);
-              if (!useCurrentLocation) {
-                setStartInput('');
-                setErrors({ ...errors, start: undefined });
-              }
-            }}
-            disabled={isLoading}
-          >
-            <Text style={[
-              styles.currentLocationText,
-              useCurrentLocation && styles.currentLocationTextActive
-            ]}>
-              {useCurrentLocation ? '✓ ' : ''}Use Current Location
-            </Text>
-          </TouchableOpacity>
-        )}
-        
-        {!useCurrentLocation && (
-          <TextInput
-            style={[styles.input, errors.start && styles.inputError]}
-            placeholder="1600 Amphitheatre Parkway, Mountain View, CA"
-            placeholderTextColor={theme.colors.textSecondary}
-            value={startInput}
-            onChangeText={(text) => {
-              setStartInput(text);
-              if (errors.start) setErrors({ ...errors, start: undefined });
-            }}
-            autoCapitalize="words"
-            editable={!isLoading}
-          />
-        )}
-        {errors.start && <Text style={styles.errorText}>{errors.start}</Text>}
+      {/* Header */}
+      <View style={styles.header}>
+        <Text style={styles.title}>Find a Detour</Text>
+        <Text style={styles.subtitle}>Plan a scenic route with stops you'll love</Text>
       </View>
 
-      {/* End Input */}
-      <View style={styles.inputGroup}>
-        <Text style={styles.label}>End Address</Text>
-        <TextInput
-          style={[styles.input, errors.end && styles.inputError]}
-          placeholder="1 Infinite Loop, Cupertino, CA"
-          placeholderTextColor={theme.colors.textSecondary}
-          value={endInput}
-          onChangeText={(text) => {
-            setEndInput(text);
-            if (errors.end) setErrors({ ...errors, end: undefined });
+      {/* Location Inputs - Google Maps Style */}
+      <View style={styles.locationCard}>
+        {/* Start Location */}
+        <View style={styles.inputRow}>
+          <View style={styles.iconContainer}>
+            <View style={[styles.dot, styles.dotStart]} />
+          </View>
+          <View style={styles.inputWrapper}>
+            <Text style={styles.inputLabel}>From</Text>
+            {currentLocation && !useCurrentLocation ? (
+              <TextInput
+                style={[styles.input, errors.start && styles.inputError]}
+                placeholder="Starting point"
+                placeholderTextColor={theme.colors.textSecondary}
+                value={startInput}
+                onChangeText={(text) => {
+                  setStartInput(text);
+                  if (errors.start) setErrors({ ...errors, start: undefined });
+                }}
+                autoCapitalize="words"
+                editable={!isLoading}
+              />
+            ) : (
+              <TouchableOpacity
+                style={styles.currentLocationField}
+                onPress={() => {
+                  setUseCurrentLocation(!useCurrentLocation);
+                  if (!useCurrentLocation) {
+                    setStartInput('');
+                    setErrors({ ...errors, start: undefined });
+                  }
+                }}
+                disabled={isLoading}
+              >
+                <Text style={styles.currentLocationValue}>
+                  📍 Your location
+                </Text>
+              </TouchableOpacity>
+            )}
+            {errors.start && <Text style={styles.errorText}>{errors.start}</Text>}
+          </View>
+          {currentLocation && (
+            <TouchableOpacity
+              style={styles.locationToggle}
+              onPress={() => {
+                setUseCurrentLocation(!useCurrentLocation);
+                if (!useCurrentLocation) {
+                  setStartInput('');
+                  setErrors({ ...errors, start: undefined });
+                }
+              }}
+              disabled={isLoading}
+            >
+              <IconSymbol
+                name={useCurrentLocation ? 'location.fill' : 'location'}
+                size={20}
+                color={useCurrentLocation ? theme.colors.accent : theme.colors.textSecondary}
+              />
+            </TouchableOpacity>
+          )}
+        </View>
+
+        {/* Divider */}
+        <View style={styles.divider} />
+
+        {/* End Location */}
+        <View style={styles.inputRow}>
+          <View style={styles.iconContainer}>
+            <View style={[styles.dot, styles.dotEnd]} />
+          </View>
+          <View style={styles.inputWrapper}>
+            <Text style={styles.inputLabel}>To</Text>
+            <TextInput
+              style={[styles.input, errors.end && styles.inputError]}
+              placeholder="Destination"
+              placeholderTextColor={theme.colors.textSecondary}
+              value={endInput}
+              onChangeText={(text) => {
+                setEndInput(text);
+                if (errors.end) setErrors({ ...errors, end: undefined });
+              }}
+              autoCapitalize="words"
+              editable={!isLoading}
+            />
+            {errors.end && <Text style={styles.errorText}>{errors.end}</Text>}
+          </View>
+          <TouchableOpacity
+            style={styles.clearButton}
+            onPress={() => setEndInput('')}
+            disabled={!endInput || isLoading}
+          >
+            {endInput && (
+              <IconSymbol
+                name="xmark.circle.fill"
+                size={20}
+                color={theme.colors.textSecondary}
+              />
+            )}
+          </TouchableOpacity>
+        </View>
+
+        {/* Swap Button */}
+        <TouchableOpacity
+          style={styles.swapButton}
+          onPress={() => {
+            const temp = startInput;
+            setStartInput(endInput);
+            setEndInput(temp);
           }}
-          autoCapitalize="words"
-          editable={!isLoading}
-        />
-        {errors.end && <Text style={styles.errorText}>{errors.end}</Text>}
+          disabled={isLoading || (!startInput && !useCurrentLocation)}
+        >
+          <IconSymbol
+            name="arrow.up.arrow.down"
+            size={18}
+            color={theme.colors.accent}
+          />
+        </TouchableOpacity>
       </View>
 
       {/* Interest Selection */}
       <View style={styles.inputGroup}>
-        <Text style={styles.label}>Interest</Text>
+        <Text style={styles.sectionLabel}>Stop Type</Text>
         <View style={styles.interestContainer}>
           {INTERESTS.map((interest) => (
             <TouchableOpacity
@@ -160,14 +224,16 @@ export default function InputFormComponent({
         {isLoading ? (
           <ActivityIndicator color={theme.colors.textPrimary} />
         ) : (
-          <Text style={styles.findButtonText}>Find Detour</Text>
+          <>
+            <IconSymbol
+              name="location.magnifyingglass"
+              size={18}
+              color={theme.colors.textPrimary}
+            />
+            <Text style={styles.findButtonText}>Find Detour</Text>
+          </>
         )}
       </TouchableOpacity>
-
-      {/* Example hint */}
-      <Text style={styles.hint}>
-        Enter full street addresses with city and state
-      </Text>
     </View>
   );
 }
@@ -179,36 +245,106 @@ const styles = StyleSheet.create({
     padding: theme.spacing.lg,
     ...theme.shadows.md,
   },
+  header: {
+    marginBottom: theme.spacing.lg,
+  },
   title: {
     ...theme.typography.h2,
     color: theme.colors.textPrimary,
-    marginBottom: theme.spacing.md,
+    marginBottom: theme.spacing.xs,
   },
-  inputGroup: {
-    marginBottom: theme.spacing.md,
-  },
-  label: {
+  subtitle: {
     ...theme.typography.bodySmall,
+    color: theme.colors.textSecondary,
+  },
+  locationCard: {
+    backgroundColor: theme.colors.background,
+    borderRadius: theme.borderRadius.md,
+    borderWidth: 1,
+    borderColor: theme.colors.cardBorder,
+    overflow: 'hidden',
+    marginBottom: theme.spacing.md,
+  },
+  inputRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: theme.spacing.md,
+    paddingVertical: theme.spacing.md,
+    gap: theme.spacing.md,
+  },
+  iconContainer: {
+    width: 24,
+    height: 24,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  dot: {
+    width: 8,
+    height: 8,
+    borderRadius: 4,
+  },
+  dotStart: {
+    backgroundColor: theme.colors.accent,
+  },
+  dotEnd: {
+    backgroundColor: theme.colors.error,
+  },
+  inputWrapper: {
+    flex: 1,
+  },
+  inputLabel: {
+    ...theme.typography.caption,
     color: theme.colors.textSecondary,
     marginBottom: theme.spacing.xs,
     fontWeight: '600',
   },
   input: {
-    backgroundColor: theme.colors.background,
-    borderRadius: theme.borderRadius.sm,
-    padding: theme.spacing.md,
     color: theme.colors.textPrimary,
     ...theme.typography.body,
+    padding: 0,
+    paddingVertical: 4,
+  },
+  currentLocationField: {
+    paddingVertical: 4,
+  },
+  currentLocationValue: {
+    ...theme.typography.body,
+    color: theme.colors.accent,
+    fontWeight: '600',
+  },
+  locationToggle: {
+    padding: theme.spacing.sm,
+  },
+  clearButton: {
+    padding: theme.spacing.sm,
+  },
+  divider: {
+    height: 1,
+    backgroundColor: theme.colors.cardBorder,
+  },
+  swapButton: {
+    position: 'absolute',
+    right: theme.spacing.md,
+    top: '50%',
+    marginTop: -24,
+    backgroundColor: theme.colors.card,
+    borderRadius: 50,
+    width: 44,
+    height: 44,
+    justifyContent: 'center',
+    alignItems: 'center',
     borderWidth: 1,
     borderColor: theme.colors.cardBorder,
+    ...theme.shadows.sm,
   },
-  inputError: {
-    borderColor: theme.colors.error,
+  inputGroup: {
+    marginBottom: theme.spacing.md,
   },
-  errorText: {
-    ...theme.typography.caption,
-    color: theme.colors.error,
-    marginTop: theme.spacing.xs,
+  sectionLabel: {
+    ...theme.typography.bodySmall,
+    color: theme.colors.textSecondary,
+    marginBottom: theme.spacing.sm,
+    fontWeight: '600',
   },
   interestContainer: {
     flexDirection: 'row',
@@ -218,7 +354,8 @@ const styles = StyleSheet.create({
     flex: 1,
     backgroundColor: theme.colors.background,
     borderRadius: theme.borderRadius.sm,
-    padding: theme.spacing.sm,
+    paddingHorizontal: theme.spacing.md,
+    paddingVertical: theme.spacing.sm,
     alignItems: 'center',
     borderWidth: 1,
     borderColor: theme.colors.cardBorder,
@@ -238,9 +375,13 @@ const styles = StyleSheet.create({
   findButton: {
     backgroundColor: theme.colors.accent,
     borderRadius: theme.borderRadius.sm,
-    padding: theme.spacing.md,
+    paddingHorizontal: theme.spacing.lg,
+    paddingVertical: theme.spacing.md,
     alignItems: 'center',
-    marginTop: theme.spacing.sm,
+    justifyContent: 'center',
+    flexDirection: 'row',
+    gap: theme.spacing.sm,
+    marginTop: theme.spacing.md,
   },
   findButtonDisabled: {
     opacity: 0.6,
@@ -249,27 +390,12 @@ const styles = StyleSheet.create({
     ...theme.typography.button,
     color: theme.colors.textPrimary,
   },
-  hint: {
+  inputError: {
+    borderColor: theme.colors.error,
+  },
+  errorText: {
     ...theme.typography.caption,
-    color: theme.colors.textSecondary,
-    marginTop: theme.spacing.sm,
-    textAlign: 'center',
-  },
-  currentLocationButton: {
-    backgroundColor: theme.colors.background,
-    borderRadius: theme.borderRadius.sm,
-    padding: theme.spacing.sm,
-    marginBottom: theme.spacing.sm,
-    borderWidth: 1,
-    borderColor: theme.colors.cardBorder,
-    alignItems: 'center',
-  },
-  currentLocationText: {
-    ...theme.typography.bodySmall,
-    color: theme.colors.textSecondary,
-    fontWeight: '600',
-  },
-  currentLocationTextActive: {
-    color: theme.colors.accent,
+    color: theme.colors.error,
+    marginTop: theme.spacing.xs,
   },
 });
