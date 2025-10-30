@@ -1,4 +1,4 @@
-You are an expert React Native engineer. Build a first releasable prototype of the “Detour” mobile app (iOS + Android) using React Native CLI (bare, not Expo). The app discovers dynamic POIs along a route using Google Directions + Places APIs, draws a detour route via a waypoint POI, and lets users locally save and view detours.
+You are an expert React Native engineer. Build a first releasable prototype of the “Detour” mobile app (iOS + Android). The app discovers dynamic POIs along a route using Google Directions + Places APIs, draws a detour route via a waypoint POI, and lets users locally save and view detours.
 
 Output requirements
 - Output the complete project as multiple files in this single response using file blocks.

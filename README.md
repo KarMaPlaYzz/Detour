@@ -1,24 +1,50 @@
-# Detour
+# Welcome to your Expo app 👋
 
-## Core Concept
-A navigation app that optimizes for the most interesting route, not the fastest. The user inputs a destination and their interests (e.g., "Architecture," "Street Art," "Hidden Cafes," "Spooky History"). Detour then generates a route that might take 15 minutes longer but guides them past fascinating, crowd-sourced points of interest, turning a mundane trip into a micro-adventure.
+This is an [Expo](https://expo.dev) project created with [`create-expo-app`](https://www.npmjs.com/package/create-expo-app).
 
-## Viral Hook
-Serendipity & Discovery. The hook is the promise of breaking your routine and discovering the hidden world right under your nose. The viral content is the amazing things people find. Every user becomes a micro-explorer, sharing photos of the "cool mural" or "secret garden" that Detour helped them find on their way to the grocery store.
+## Get started
 
-## Target Audience
-Curious urban dwellers, tourists who want an authentic experience, and anyone who is bored of the same daily commute.
+1. Install dependencies
 
-## Monetization Model
-*   **Freemium:** Basic Detour generation is free.
-*   **Curated Detour Packs:** Sell premium, themed "Detours" curated by local experts for a one-time fee ($3.99). Examples: "The 'Secret Speakeasy' Bar Crawl" in New York, or "The 'Brutalist Architecture' Walk" in London.
-*   **Local Business Sponsorship:** A small, independent bookstore or cafe can pay a small fee to become a suggested "Point of Interest" on relevant Detours, driving real foot traffic.
+   ```bash
+   npm install
+   ```
 
-## Competitive Edge
-While Google Maps is ruthlessly efficient, Detour is purposefully inefficient in the name of joy and discovery. It serves an emotional need, not just a logistical one. It gamifies local travel in a way no other navigation tool does.
+2. Start the app
 
-## MVP Version
-A React Native app for iOS and Android where a user inputs a start and end point. The app queries a database of user-submitted points of interest and adjusts the route to pass by one or two of them.
+   ```bash
+   npx expo start
+   ```
 
-## Expansion Potential
-Could integrate with audio guides that automatically play when you approach a point of interest. It could host "Detour Challenges" where users compete to find the most new places in their city in a month. It could become the go-to platform for experiential travel and local discovery.
+In the output, you'll find options to open the app in a
+
+- [development build](https://docs.expo.dev/develop/development-builds/introduction/)
+- [Android emulator](https://docs.expo.dev/workflow/android-studio-emulator/)
+- [iOS simulator](https://docs.expo.dev/workflow/ios-simulator/)
+- [Expo Go](https://expo.dev/go), a limited sandbox for trying out app development with Expo
+
+You can start developing by editing the files inside the **app** directory. This project uses [file-based routing](https://docs.expo.dev/router/introduction).
+
+## Get a fresh project
+
+When you're ready, run:
+
+```bash
+npm run reset-project
+```
+
+This command will move the starter code to the **app-example** directory and create a blank **app** directory where you can start developing.
+
+## Learn more
+
+To learn more about developing your project with Expo, look at the following resources:
+
+- [Expo documentation](https://docs.expo.dev/): Learn fundamentals, or go into advanced topics with our [guides](https://docs.expo.dev/guides).
+- [Learn Expo tutorial](https://docs.expo.dev/tutorial/introduction/): Follow a step-by-step tutorial where you'll create a project that runs on Android, iOS, and the web.
+
+## Join the community
+
+Join our community of developers creating universal apps.
+
+- [Expo on GitHub](https://github.com/expo/expo): View our open source platform and contribute.
+- [Discord community](https://chat.expo.dev): Chat with Expo users and ask questions.
