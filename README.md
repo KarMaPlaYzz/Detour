@@ -1,50 +1,94 @@
-# Welcome to your Expo app 👋
+# Detour - Mobile App Prototype (v1.0)
 
-This is an [Expo](https://expo.dev) project created with [`create-expo-app`](https://www.npmjs.com/package/create-expo-app).
+**Detour** is a React Native mobile app (iOS + Android) that helps users discover interesting points of interest (POIs) along their routes. Enter a start and end location with a selected interest (Street Art, Architecture, Cafes), and Detour will dynamically find a relevant POI near your route and create a detour that includes it.
 
-## Get started
+## Features
 
-1. Install dependencies
+- **Dynamic POI Discovery**: Uses Google Directions API and Google Places Nearby Search to find interesting stops along your route
+- **Interactive Map**: View your route with markers for start, POI, and destination using react-native-maps
+- **Local Persistence**: Save and manage your detours locally with AsyncStorage
+- **Cross-Platform**: Works on both iOS and Android using Expo managed workflow
 
-   ```bash
-   npm install
-   ```
+## Tech Stack
 
-2. Start the app
+- **Framework**: Expo (managed workflow) + React Native
+- **Language**: TypeScript
+- **Navigation**: Expo Router (file-based routing)
+- **Maps**: react-native-maps
+- **APIs**: Google Directions API, Google Places API
+- **Storage**: AsyncStorage
 
-   ```bash
-   npx expo start
-   ```
+## Quick Start
 
-In the output, you'll find options to open the app in a
+See [SETUP.md](./SETUP.md) for detailed installation and configuration instructions.
 
-- [development build](https://docs.expo.dev/develop/development-builds/introduction/)
-- [Android emulator](https://docs.expo.dev/workflow/android-studio-emulator/)
-- [iOS simulator](https://docs.expo.dev/workflow/ios-simulator/)
-- [Expo Go](https://expo.dev/go), a limited sandbox for trying out app development with Expo
+## Project Structure
 
-You can start developing by editing the files inside the **app** directory. This project uses [file-based routing](https://docs.expo.dev/router/introduction).
-
-## Get a fresh project
-
-When you're ready, run:
-
-```bash
-npm run reset-project
+```
+app/
+  _layout.tsx              # Root layout with tabs
+  (tabs)/
+    index.tsx              # Explore screen (main map interface)
+    my-detours.tsx         # Saved detours list
+src/
+  components/
+    MapViewComponent.tsx   # Map display with polyline and markers
+    InputFormComponent.tsx # Input form for start/end/interest
+    SaveDetourModal.tsx    # Modal to save a detour
+  services/
+    DetourService.ts       # Core logic for route and POI discovery
+    PolylineDecoder.ts     # Decode Google polyline format
+    StorageService.ts      # AsyncStorage wrapper
+  styles/
+    theme.ts               # Design system tokens
+  types/
+    detour.ts              # TypeScript interfaces
 ```
 
-This command will move the starter code to the **app-example** directory and create a blank **app** directory where you can start developing.
+## Usage
 
-## Learn more
+1. **Find a Detour**:
+   - Open the Explore tab
+   - Enter start coordinates (e.g., `34.0522,-118.2437`)
+   - Enter end coordinates (e.g., `34.0407,-118.2468`)
+   - Select an interest (Street Art, Architecture, or Cafes)
+   - Tap "Find Detour"
 
-To learn more about developing your project with Expo, look at the following resources:
+2. **Save a Detour**:
+   - After generating a route, tap "Save Detour"
+   - Enter a name for your detour
+   - Access it later in "My Detours"
 
-- [Expo documentation](https://docs.expo.dev/): Learn fundamentals, or go into advanced topics with our [guides](https://docs.expo.dev/guides).
-- [Learn Expo tutorial](https://docs.expo.dev/tutorial/introduction/): Follow a step-by-step tutorial where you'll create a project that runs on Android, iOS, and the web.
+3. **View Saved Detours**:
+   - Go to "My Detours" tab
+   - Tap any saved detour to view it on the map
+   - Delete detours by tapping the delete button
 
-## Join the community
+## API Costs & Quotas
 
-Join our community of developers creating universal apps.
+This app makes client-side API calls to Google Maps APIs. Be aware of:
+- **Directions API**: ~$5 per 1,000 requests
+- **Places Nearby Search**: ~$32 per 1,000 requests
 
-- [Expo on GitHub](https://github.com/expo/expo): View our open source platform and contribute.
-- [Discord community](https://chat.expo.dev): Chat with Expo users and ask questions.
+Restrict your API key to your app's iOS bundle ID and Android package name to prevent unauthorized use. Monitor usage in Google Cloud Console.
+
+## Limitations (v1.0)
+
+- **No Address Geocoding**: Inputs are lat/lng only (geocoding planned for v1.1)
+- **Single POI**: Only returns one POI per detour
+- **Local Storage Only**: No cloud sync or authentication
+- **Basic POI Selection**: Uses first result from Places API
+
+## Privacy
+
+- Location data is only used locally on your device
+- API calls are made directly from the client to Google
+- No user data is collected or sent to any backend
+
+## License
+
+MIT
+
+## Contributing
+
+This is a prototype. Contributions, issues, and feature requests are welcome!
