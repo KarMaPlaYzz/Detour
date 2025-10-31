@@ -1,3 +1,4 @@
+import { reverseGeocodeLocation } from '@/services/DetourService';
 import { theme } from '@/styles/theme';
 import { Interest, Location } from '@/types/detour';
 import { BlurView } from 'expo-blur';
@@ -5,6 +6,7 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import {
   Animated,
   Keyboard,
+  Pressable,
   ScrollView,
   StyleSheet,
   Text,
@@ -102,6 +104,21 @@ export default function InputFormComponent({
   const [isFormExpanded, setIsFormExpanded] = useState(false);
   const isFormExpandedRef = useRef(false);
   const [focusOnExpand, setFocusOnExpand] = useState<'start' | 'end' | null>(null);
+  const hasPopulatedStartLocationRef = useRef(false);
+  const userEditedStartLocationRef = useRef(false);
+
+  // Log component mount
+  useEffect(() => {
+    console.log('[InputFormComponent] Mounted');
+    return () => {
+      console.log('[InputFormComponent] Unmounted');
+    };
+  }, []);
+
+  // Log state changes for debugging
+  useEffect(() => {
+    console.log('[State] startInput:', startInput, 'endInput:', endInput, 'hasRoute:', hasRoute, 'isFormExpanded:', isFormExpanded);
+  }, [startInput, endInput, hasRoute, isFormExpanded]);
 
   // Update interests when available POI types change
   useEffect(() => {
@@ -200,9 +217,16 @@ export default function InputFormComponent({
     }
   }, [suggestions.length]);
 
+  // Helper function to check if a string is coordinates (lat,lng format)
+  const isCoordinateString = (str: string): boolean => {
+    const coordPattern = /^-?\d+\.?\d*,-?\d+\.?\d*$/;
+    return coordPattern.test(str.trim());
+  };
+
   // Detect route changes
   useEffect(() => {
     if (detourRoute) {
+      console.log('[Route Detection] Route detected');
       setHasRoute(true);
       setIsFormExpanded(false); // Collapse form when route is first found
       Animated.timing(headerAnimRef.current, {
@@ -210,15 +234,49 @@ export default function InputFormComponent({
         duration: 300,
         useNativeDriver: false,
       }).start();
+      
+      // Populate start location from current location only on first route calculation
+      // and only if user hasn't manually edited the start location
+      // Also replace coordinates-only strings with reverse-geocoded addresses
+      const startIsCoordinates = isCoordinateString(startInput);
+      const shouldPopulate = !hasPopulatedStartLocationRef.current && !userEditedStartLocationRef.current && currentLocation;
+      const shouldReplaceCoordinates = startIsCoordinates && !userEditedStartLocationRef.current && !hasPopulatedStartLocationRef.current;
+      
+      if ((shouldPopulate && !startInput.trim()) || shouldReplaceCoordinates) {
+        console.log('[Route Detection] Auto-populating start location from current location');
+        console.log('[Route Detection] hasPopulatedStartLocationRef:', hasPopulatedStartLocationRef.current);
+        console.log('[Route Detection] userEditedStartLocationRef:', userEditedStartLocationRef.current);
+        console.log('[Route Detection] startInput:', startInput);
+        console.log('[Route Detection] startIsCoordinates:', startIsCoordinates);
+        
+        if (currentLocation) {
+          reverseGeocodeLocation(currentLocation).then((address) => {
+            if (address) {
+              console.log('[Route Detection] Reverse geocoded address:', address);
+              setStartInput(address);
+              hasPopulatedStartLocationRef.current = true;
+            }
+          }).catch((error) => {
+            console.error('Error reverse geocoding current location:', error);
+          });
+        }
+      } else {
+        console.log('[Route Detection] NOT auto-populating start location');
+        console.log('[Route Detection] Reasons: hasPopulated=', hasPopulatedStartLocationRef.current, 'userEdited=', userEditedStartLocationRef.current, 'startInput=', startInput, 'hasCurrentLocation=', !!currentLocation);
+      }
     } else {
+      console.log('[Route Detection] No route detected - resetting flags');
       setHasRoute(false);
       Animated.timing(headerAnimRef.current, {
         toValue: 0,
         duration: 300,
         useNativeDriver: false,
       }).start();
+      // Reset the flags when no route is found
+      hasPopulatedStartLocationRef.current = false;
+      userEditedStartLocationRef.current = false;
     }
-  }, [detourRoute]);
+  }, [detourRoute, currentLocation]);
 
   // Animate form expand/collapse
   useEffect(() => {
@@ -260,6 +318,26 @@ export default function InputFormComponent({
     }
   }, [isExpanded, hasRoute]);
 
+  // Focus start input when it's focused state changes
+  useEffect(() => {
+    if (startInputFocused && hasRoute) {
+      console.log('[Focus] Start input focused');
+      setTimeout(() => {
+        startInputRef.current?.focus();
+      }, 50);
+    }
+  }, [startInputFocused, hasRoute]);
+
+  // Focus end input when it's focused state changes
+  useEffect(() => {
+    if (endInputFocused && hasRoute) {
+      console.log('[Focus] End input focused');
+      setTimeout(() => {
+        endInputRef.current?.focus();
+      }, 50);
+    }
+  }, [endInputFocused, hasRoute]);
+
   // Handle explicit reset from parent
   useEffect(() => {
     if (onReset) {
@@ -269,17 +347,22 @@ export default function InputFormComponent({
   }, [onReset]);
 
   // Handle reset from parent - only clear when transitioning from route found to no route
+  // BUT NOT if we're in the middle of searching for a new route
   useEffect(() => {
-    if (prevHasRouteRef.current && !hasRoute) {
-      // We had a route but now we don't - clear the inputs
+    if (prevHasRouteRef.current && !hasRoute && !isLoading) {
+      // We had a route but now we don't - AND we're not loading a new route
+      // This means the user cleared the route intentionally
+      console.log('[Route State] Clearing inputs because route was cleared and not loading');
       setEndInput('');
       setStartInput('');
       setSuggestions([]);
       setActiveSuggestionsField(null);
       isUpdatingRouteRef.current = false;
+    } else if (prevHasRouteRef.current && !hasRoute && isLoading) {
+      console.log('[Route State] Route cleared but isLoading=true, preserving inputs for new search');
     }
     prevHasRouteRef.current = hasRoute;
-  }, [hasRoute]);
+  }, [hasRoute, isLoading]);
 
   // Animate summary visibility based on loading state
   useEffect(() => {
@@ -361,6 +444,7 @@ export default function InputFormComponent({
 
   // Handle end input change with suggestions
   const handleEndInputChange = useCallback((text: string) => {
+    console.log('[handleEndInputChange] End input changed to:', text);
     setEndInput(text);
     setActiveSuggestionsField('to');
     fetchSuggestions(text);
@@ -368,7 +452,13 @@ export default function InputFormComponent({
 
   // Handle start input change with suggestions
   const handleStartInputChange = useCallback((text: string) => {
+    console.log('[handleStartInputChange] Start input changed to:', text);
     setStartInput(text);
+    // Mark that user has manually edited the start location
+    if (text.trim()) {
+      console.log('[handleStartInputChange] Marking start location as user-edited');
+      userEditedStartLocationRef.current = true;
+    }
     setActiveSuggestionsField('from');
     fetchSuggestions(text);
   }, [fetchSuggestions]);
@@ -381,32 +471,80 @@ export default function InputFormComponent({
   }, [endInputFocused, startInputFocused, hasRoute]);
 
   const handleSuggestionSelect = (suggestion: string) => {
+    console.log('[handleSuggestionSelect] Called with suggestion:', suggestion);
+    console.log('[handleSuggestionSelect] activeSuggestionsField:', activeSuggestionsField);
+    console.log('[handleSuggestionSelect] Current startInput:', startInput);
+    console.log('[handleSuggestionSelect] Current endInput:', endInput);
+    
     if (activeSuggestionsField === 'to') {
-      setEndInput(suggestion);
+      console.log('[handleSuggestionSelect] Processing END destination selection');
+      const newEndInput = suggestion;
+      const currentStartInput = startInput.trim();
+      
+      console.log('[handleSuggestionSelect] Before setState - newEndInput:', newEndInput);
+      console.log('[handleSuggestionSelect] Before setState - currentStartInput:', currentStartInput);
+      
+      // Update state first
+      setEndInput(newEndInput);
+      setStartInput(currentStartInput);
+      setEndInputFocused(false);
+      endInputRef.current?.blur();
       setSuggestions([]);
       setActiveSuggestionsField(null);
-      setIsFormExpanded(false); // Collapse after selecting suggestion
-      // Trigger search immediately after selecting destination
-      if (currentLocation) {
-        const startValue = `${currentLocation.latitude},${currentLocation.longitude}`;
-        // Use setTimeout to allow state update first
-        isUpdatingRouteRef.current = true;
-        setTimeout(() => {
-          onFindDetour(startValue, suggestion);
-        }, 0);
+      
+      // Trigger search with calculated values
+      let startValue = currentStartInput;
+      if (!startValue && currentLocation) {
+        startValue = `${currentLocation.latitude},${currentLocation.longitude}`;
+        console.log('[handleSuggestionSelect] Using current location as start:', startValue);
+        setStartInput(startValue);
       }
+      
+      console.log('[handleSuggestionSelect] Calling onFindDetour with:', { startValue, newEndInput });
+      if (startValue) {
+        isUpdatingRouteRef.current = true;
+        // Don't collapse until after the route is found
+        onFindDetour(startValue, newEndInput);
+      }
+      
+      // Collapse form after a brief delay to allow state to settle
+      setTimeout(() => {
+        console.log('[handleSuggestionSelect] Collapsing form after 100ms delay');
+        setIsFormExpanded(false);
+      }, 100);
     } else if (activeSuggestionsField === 'from') {
-      setStartInput(suggestion);
+      console.log('[handleSuggestionSelect] Processing START location selection');
+      const newStartInput = suggestion;
+      const currentEndInput = endInput.trim();
+      
+      console.log('[handleSuggestionSelect] Before setState - newStartInput:', newStartInput);
+      console.log('[handleSuggestionSelect] Before setState - currentEndInput:', currentEndInput);
+      
+      // Update state first
+      setStartInput(newStartInput);
+      setEndInput(currentEndInput);
+      setStartInputFocused(false);
+      startInputRef.current?.blur();
+      userEditedStartLocationRef.current = true;
       setSuggestions([]);
       setActiveSuggestionsField(null);
-      setIsFormExpanded(false); // Collapse after selecting suggestion
+      
+      console.log('[handleSuggestionSelect] userEditedStartLocationRef set to true');
+      
       // If end is already filled, search with new start location
-      if (endInput.trim()) {
+      if (currentEndInput) {
+        console.log('[handleSuggestionSelect] End input exists, calling onFindDetour');
         isUpdatingRouteRef.current = true;
-        setTimeout(() => {
-          onFindDetour(suggestion, endInput);
-        }, 0);
+        onFindDetour(newStartInput, currentEndInput);
+      } else {
+        console.log('[handleSuggestionSelect] End input is empty, not calling onFindDetour');
       }
+      
+      // Collapse form after a brief delay to allow state to settle
+      setTimeout(() => {
+        console.log('[handleSuggestionSelect] Collapsing form after 100ms delay');
+        setIsFormExpanded(false);
+      }, 100);
     }
   };
 
@@ -447,101 +585,101 @@ export default function InputFormComponent({
       >
         {/* Search Bar - Shows when no route */}
         {!hasRoute && (
-          <BlurView style={styles.suggestionsBlur} tint="light" intensity={80}>
-                
-          <Animated.View
-            style={{
-              opacity: headerAnimRef.current.interpolate({
-                inputRange: [0, 1],
-                outputRange: [1, 0],
-              }),
-            }}
-          >
-            <TouchableOpacity 
-              style={styles.searchField}
-              activeOpacity={0.7}
+          <BlurView style={styles.suggestionsBlur} tint="light" intensity={80}> 
+            <Animated.View
+              style={{
+                opacity: headerAnimRef.current.interpolate({
+                  inputRange: [0, 1],
+                  outputRange: [1, 0],
+                }),
+              }}
             >
-              <IconSymbol name="magnifyingglass" size={18} color={theme.colors.textSecondary} />
-              <TextInput
-                ref={endInputRef}
-                style={styles.destinationInput}
-                placeholder="Search destination"
-                placeholderTextColor={theme.colors.textTertiary}
-                value={endInput}
-                onChangeText={handleEndInputChange}
-                onFocus={() => setEndInputFocused(true)}
-                onBlur={() => setEndInputFocused(false)}
-                autoCapitalize="words"
-              />
-              {(endInput.length > 0 || isClearing) && (
-                <Animated.View
-                  style={[
-                    {
-                      opacity: clearButtonAnimRef.current,
-                      transform: [
-                        {
-                          rotateZ: clearButtonAnimRef.current.interpolate({
-                            inputRange: [0, 1],
-                            outputRange: [isClearing ? '90deg' : '-90deg', '0deg'],
-                          }),
-                        },
-                        {
-                          scale: clearButtonAnimRef.current.interpolate({
-                            inputRange: [0, 1],
-                            outputRange: [0.6, 1],
-                          }),
-                        },
-                      ],
-                    },
-                  ]}
-                >
-                  <TouchableOpacity 
-                    onPress={handleClearInput}
-                    hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+              <TouchableOpacity 
+                style={styles.searchField}
+                activeOpacity={0.7}
+              >
+                <IconSymbol name="magnifyingglass" size={18} color={theme.colors.textSecondary} />
+                <TextInput
+                  ref={endInputRef}
+                  style={styles.destinationInput}
+                  placeholder="Search destination"
+                  placeholderTextColor={theme.colors.textTertiary}
+                  value={endInput}
+                  onChangeText={handleEndInputChange}
+                  onFocus={() => setEndInputFocused(true)}
+                  onBlur={() => setEndInputFocused(false)}
+                  autoCapitalize="words"
+                />
+                {(endInput.length > 0 || isClearing) && (
+                  <Animated.View
+                    style={[
+                      {
+                        opacity: clearButtonAnimRef.current,
+                        transform: [
+                          {
+                            rotateZ: clearButtonAnimRef.current.interpolate({
+                              inputRange: [0, 1],
+                              outputRange: [isClearing ? '90deg' : '-90deg', '0deg'],
+                            }),
+                          },
+                          {
+                            scale: clearButtonAnimRef.current.interpolate({
+                              inputRange: [0, 1],
+                              outputRange: [0.6, 1],
+                            }),
+                          },
+                        ],
+                      },
+                    ]}
                   >
-                    <IconSymbol name="xmark" size={18} color={theme.colors.textTertiary} />
-                  </TouchableOpacity>
+                    <TouchableOpacity 
+                      onPress={handleClearInput}
+                      hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+                    >
+                      <IconSymbol name="xmark" size={18} color={theme.colors.textTertiary} />
+                    </TouchableOpacity>
+                  </Animated.View>
+                )}
+              </TouchableOpacity>
+
+              {/* Suggestions Dropdown */}
+              {suggestions.length > 0 && (
+                
+                <Animated.View style={{
+                    opacity: suggestionsAnimRef.current,
+                    maxHeight: suggestionsAnimRef.current.interpolate({
+                      inputRange: [0, 1],
+                      outputRange: [0, 500],
+                    }),
+                    transform: [{
+                      translateY: suggestionsAnimRef.current.interpolate({
+                        inputRange: [0, 1],
+                        outputRange: [-10, 0],
+                      }),
+                    }],
+                  }}>
+                      <View style={styles.suggestionsContainer}>
+                        {suggestions.slice(0, 5).map((item, index) => (
+                          <TouchableOpacity
+                            key={index}
+                            style={styles.suggestionItem}
+                            onPress={() => handleSuggestionSelect(item.fullDescription)}
+                          >
+                            <IconSymbol name="location" size={16} color={theme.colors.textTertiary} />
+                            <View style={styles.suggestionContent}>
+                              <Text style={styles.suggestionText} numberOfLines={1}>{item.mainText}</Text>
+                              {item.secondaryText && (
+                                <Text style={styles.suggestionSecondaryText} numberOfLines={1}>{item.secondaryText}</Text>
+                              )}
+                            </View>
+                            <IconSymbol name="arrow.up.left" size={14} color={theme.colors.textTertiary} />
+                          </TouchableOpacity>
+                        ))}
+                      </View>
                 </Animated.View>
               )}
-            </TouchableOpacity>
-
-            {/* Suggestions Dropdown */}
-            {suggestions.length > 0 && (
-              <Animated.View style={{
-                  opacity: suggestionsAnimRef.current,
-                  maxHeight: suggestionsAnimRef.current.interpolate({
-                    inputRange: [0, 1],
-                    outputRange: [0, 500],
-                  }),
-                  transform: [{
-                    translateY: suggestionsAnimRef.current.interpolate({
-                      inputRange: [0, 1],
-                      outputRange: [-10, 0],
-                    }),
-                  }],
-                }}>
-                    <View style={styles.suggestionsContainer}>
-                      {suggestions.slice(0, 5).map((item, index) => (
-                        <TouchableOpacity
-                          key={index}
-                          style={styles.suggestionItem}
-                          onPress={() => handleSuggestionSelect(item.fullDescription)}
-                        >
-                          <IconSymbol name="location" size={16} color={theme.colors.textTertiary} />
-                          <View style={styles.suggestionContent}>
-                            <Text style={styles.suggestionText} numberOfLines={1}>{item.mainText}</Text>
-                            {item.secondaryText && (
-                              <Text style={styles.suggestionSecondaryText} numberOfLines={1}>{item.secondaryText}</Text>
-                            )}
-                          </View>
-                          <IconSymbol name="arrow.up.left" size={14} color={theme.colors.textTertiary} />
-                        </TouchableOpacity>
-                      ))}
-                    </View>
-              </Animated.View>
-            )}
-          </Animated.View>
-                </BlurView>
+            </Animated.View>
+          </BlurView>
         )}
 
         {/* Form Content - Shows when route found */}
@@ -566,10 +704,7 @@ export default function InputFormComponent({
                 styles.routeSummary,
                 {
                   opacity: summaryVisibilityRef.current,
-                  maxHeight: collapseAnimRef.current.interpolate({
-                    inputRange: [0, 1],
-                    outputRange: [135, 400],
-                  }),
+                  overflow: 'hidden',
                   pointerEvents: isLoading ? 'none' : 'auto',
                 }
               ]}
@@ -587,46 +722,93 @@ export default function InputFormComponent({
               >
                 <View style={styles.routePoint}>
                   <IconSymbol name="location.fill" size={20} color={theme.colors.accent} />
-                  <TextInput
-                    ref={startInputRef}
-                    style={[styles.searchField, styles.routeInput, styles.summaryInput]}
-                    placeholder="Your Location"
-                    placeholderTextColor={theme.colors.textTertiary}
-                    value={startInput}
-                    onChangeText={handleStartInputChange}
-                    onFocus={() => setStartInputFocused(true)}
-                    onBlur={() => setStartInputFocused(false)}
-                    autoCapitalize="words"
-                    editable={!isLoading}
-                  />
+                  <Pressable
+                    style={styles.locationDisplayContainer}
+                    onPress={() => {
+                      setStartInputFocused(true);
+                      startInputRef.current?.focus();
+                    }}
+                    disabled={isLoading}
+                  >
+                    {startInputFocused ? (
+                      <TextInput
+                        ref={startInputRef}
+                        style={styles.locationStartEditInput}
+                        placeholder="Start of your journey"
+                        placeholderTextColor={theme.colors.textTertiary}
+                        value={startInput.split(',')[0]}
+                        onChangeText={(text) => handleStartInputChange(text)}
+                        onFocus={() => setStartInputFocused(true)}
+                        onBlur={() => setStartInputFocused(false)}
+                        autoCapitalize="words"
+                        editable={!isLoading}
+                        selectTextOnFocus={true}
+                      />
+                    ) : (
+                      <>
+                        {startInput.trim() ? (
+                          <>
+                            <Text style={styles.locationMainText} numberOfLines={1}>{startInput.split(',')[0]}</Text>
+                            <Text style={styles.locationSecondaryText} numberOfLines={1}>
+                              {startInput.includes(',') ? startInput.substring(startInput.indexOf(',') + 1).trim() : ''}
+                            </Text>
+                          </>
+                        ) : (
+                          <Text style={styles.locationPlaceholder}>Start of your journey</Text>
+                        )}
+                      </>
+                    )}
+                  </Pressable>
                 </View>
 
                 <Animated.View 
                   style={[
                     styles.routeConnector,
                     {
-                      opacity: collapseAnimRef.current.interpolate({
-                        inputRange: [0, 0.3, 1],
-                        outputRange: [0, 0.3, 1],
-                      }),
+                      opacity: 1,
                     }
                   ]}
                 />
 
                 <View style={styles.routePoint}>
                   <IconSymbol name="flag.checkered" size={20} color={theme.colors.secondary} />
-                  <TextInput
-                    ref={endInputRef}
-                    style={[styles.searchField, styles.routeInput, styles.summaryInput]}
-                    placeholder="To location"
-                    placeholderTextColor={theme.colors.textTertiary}
-                    value={endInput}
-                    onChangeText={handleEndInputChange}
-                    onFocus={() => setEndInputFocused(true)}
-                    onBlur={() => setEndInputFocused(false)}
-                    autoCapitalize="words"
-                    editable={!isLoading}
-                  />
+                  <Pressable
+                    style={styles.locationDisplayContainer}
+                    onPress={() => {
+                      setEndInputFocused(true);
+                      endInputRef.current?.focus();
+                    }}
+                    disabled={isLoading}
+                  >
+                    {endInputFocused ? (
+                      <TextInput
+                        ref={endInputRef}
+                        style={styles.locationEndEditInput}
+                        placeholder="End of your journey"
+                        placeholderTextColor={theme.colors.textTertiary}
+                        value={endInput.split(',')[0]}
+                        onChangeText={(text) => handleEndInputChange(text)}
+                        onFocus={() => setEndInputFocused(true)}
+                        onBlur={() => setEndInputFocused(false)}
+                        autoCapitalize="words"
+                        editable={!isLoading}
+                        selectTextOnFocus={true}
+                      />
+                    ) : (
+                      <>
+                        {endInput.trim() ? (
+                          <>
+                            <Text style={styles.locationMainText} numberOfLines={1}>{endInput.split(',')[0]}</Text>
+                            <Text style={styles.locationSecondaryText} numberOfLines={1}>
+                              {endInput.includes(',') ? endInput.substring(endInput.indexOf(',') + 1).trim() : ''}
+                            </Text>
+                          </>
+                        ) : (
+                          <Text style={styles.locationPlaceholder}>End of your journey</Text>
+                        )}
+                      </>
+                    )}
+                  </Pressable>
                 </View>
               </Animated.View>
 
@@ -663,8 +845,51 @@ export default function InputFormComponent({
               </Animated.View>
             </Animated.View>
 
-            {/* Suggestions Dropdown */}
-            {suggestions.length > 0 && (
+            {/* Start/End Location Suggestions Dropdown */}
+            {suggestions.length > 0 && activeSuggestionsField && (activeSuggestionsField === 'from' || activeSuggestionsField === 'to') && (
+              <Animated.View style={{
+                opacity: suggestionsAnimRef.current,
+                maxHeight: suggestionsAnimRef.current.interpolate({
+                  inputRange: [0, 1],
+                  outputRange: [0, 500],
+                }),
+                transform: [{
+                  translateY: suggestionsAnimRef.current.interpolate({
+                    inputRange: [0, 1],
+                    outputRange: [-10, 0],
+                  }),
+                }],
+                position: 'absolute',
+                top: activeSuggestionsField === 'from' ? 60 : 140,
+                left: 0,
+                right: 0,
+                zIndex: 1000,
+              }}>
+                <BlurView style={styles.suggestionsBlur} tint="light" intensity={80}>
+                  <View style={styles.suggestionsContainer}>
+                    {suggestions.slice(0, 5).map((item, index) => (
+                      <TouchableOpacity
+                        key={index}
+                        style={styles.suggestionItem}
+                        onPress={() => handleSuggestionSelect(item.fullDescription)}
+                      >
+                        <IconSymbol name="location" size={16} color={theme.colors.textTertiary} />
+                        <View style={styles.suggestionContent}>
+                          <Text style={styles.suggestionText} numberOfLines={1}>{item.mainText}</Text>
+                          {item.secondaryText && (
+                            <Text style={styles.suggestionSecondaryText} numberOfLines={1}>{item.secondaryText}</Text>
+                          )}
+                        </View>
+                        <IconSymbol name="arrow.up.left" size={14} color={theme.colors.textTertiary} />
+                      </TouchableOpacity>
+                    ))}
+                  </View>
+                </BlurView>
+              </Animated.View>
+            )}
+
+            {/* Suggestions Dropdown - Only show for search field, not for start/end fields */}
+            {suggestions.length > 0 && (!activeSuggestionsField || (activeSuggestionsField !== 'from' && activeSuggestionsField !== 'to')) && (
               <Animated.View style={{
                 opacity: suggestionsAnimRef.current,
                 maxHeight: suggestionsAnimRef.current.interpolate({
@@ -1025,15 +1250,14 @@ const styles = StyleSheet.create({
   routeSummary: {
     backgroundColor: theme.colors.card,
     borderRadius: theme.borderRadius.lg,
-    padding: theme.spacing.md,
-    paddingTop: theme.spacing.sm,
-    paddingBottom: theme.spacing.sm,
+    paddingHorizontal: theme.spacing.md,
+    paddingVertical: theme.spacing.sm,
     borderWidth: 1,
     borderColor: theme.colors.cardBorder,
-    gap: theme.spacing.md,
+    gap: theme.spacing.sm,
     ...theme.shadows.sm,
     flexDirection: 'row',
-    alignItems: 'flex-start',
+    alignItems: 'center',
   },
 
   routeSummaryBlur: {
@@ -1046,7 +1270,10 @@ const styles = StyleSheet.create({
 
   summaryContent: {
     flex: 1,
-    gap: theme.spacing.md,
+    gap: 0,
+    flexDirection: 'column',
+    justifyContent: 'center',
+    alignItems: 'stretch',
   },
 
   summaryContentTouchable: {
@@ -1128,6 +1355,7 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     gap: theme.spacing.md,
+    height: 44,
   },
 
   pointText: {
@@ -1137,10 +1365,12 @@ const styles = StyleSheet.create({
   },
 
   routeConnector: {
-    width: 2,
+    width: 3,
     height: 16,
     backgroundColor: theme.colors.cardBorder,
-    marginLeft: 4,
+    marginLeft: 8,
+    marginVertical: 0,
+    justifyContent: 'center',
   },
 
   poiSection: {
@@ -1369,5 +1599,57 @@ const styles = StyleSheet.create({
     ...theme.typography.body,
     color: theme.colors.textSecondary,
     flex: 1,
+  },
+
+  locationDisplayContainer: {
+    flex: 1,
+    justifyContent: 'center',
+    paddingVertical: 2,
+    paddingHorizontal: theme.spacing.xs,
+    height: 44,
+  },
+
+  locationTextContainer: {
+    flex: 1,
+  },
+
+  locationMainText: {
+    ...theme.typography.body,
+    color: theme.colors.textPrimary,
+    fontSize: 15,
+    lineHeight: 18,
+  },
+
+  locationSecondaryText: {
+    ...theme.typography.caption,
+    color: theme.colors.textTertiary,
+    fontSize: 12,
+    marginTop: 0,
+    lineHeight: 14,
+  },
+
+  locationPlaceholder: {
+    ...theme.typography.body,
+    color: theme.colors.textTertiary,
+    fontSize: 15,
+    lineHeight: 18,
+  },
+  locationStartEditInput: {
+    ...theme.typography.body,
+    color: theme.colors.textPrimary,
+    fontSize: 15,
+    padding: 0,
+    margin: 0,
+    flex: 1,
+    lineHeight: 0,
+  },
+  locationEndEditInput: {
+    ...theme.typography.body,
+    color: theme.colors.textPrimary,
+    fontSize: 15,
+    padding: 0,
+    margin: 0,
+    flex: 1,
+    lineHeight: 0,
   },
 });

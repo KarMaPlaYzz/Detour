@@ -9,11 +9,6 @@ export default ({ config }: ConfigContext): ExpoConfig => ({
   icon: './assets/images/icon.png',
   scheme: 'detour',
   userInterfaceStyle: 'dark',
-  splash: {
-    image: './assets/images/splash.png',
-    resizeMode: 'contain',
-    backgroundColor: '#121212'
-  },
   ios: {
     supportsTablet: true,
     bundleIdentifier: 'com.detour.app',

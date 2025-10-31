@@ -37,6 +37,30 @@ export interface SearchPOIsParams {
 }
 
 /**
+ * Convert coordinates to a human-readable address
+ */
+export async function reverseGeocodeLocation(location: Location): Promise<string | null> {
+  if (!GOOGLE_MAPS_API_KEY) {
+    return null;
+  }
+
+  try {
+    const url = `${GEOCODING_URL}?latlng=${location.latitude},${location.longitude}&key=${GOOGLE_MAPS_API_KEY}`;
+    const response = await fetch(url);
+    const data = await response.json();
+    
+    if (data.status === 'OK' && data.results && data.results.length > 0) {
+      // Return the first result which is the most specific address
+      return data.results[0].formatted_address;
+    }
+    return null;
+  } catch (error) {
+    console.error('Reverse geocoding error:', error);
+    return null;
+  }
+}
+
+/**
  * Convert a location (address string or coordinates) to coordinates
  */
 async function geocodeLocation(location: Location | string): Promise<Location | null> {

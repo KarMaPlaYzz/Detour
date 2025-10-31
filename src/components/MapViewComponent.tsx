@@ -84,11 +84,11 @@ const ModernMarker = React.memo(({
     switch (type) {
       case 'start':
         return {
-          bgColor: '#1F51BA',
-          borderColor: '#0D35A8',
+          bgColor: '#0099FF',
+          borderColor: '#0077CC',
           iconColor: '#FFFFFF',
-          icon: 'play-circle',
-          size: 28 * scale,
+          icon: 'circle',
+          size: 18 * scale,
         };
       case 'end':
         return {
@@ -391,7 +391,7 @@ export default function MapViewComponent({
           const isEnd = index === markers.length - 1;
 
           // Hide start marker, only show end marker
-          if (isStart) return null;
+          // if (isStart) return null;
 
           return (
             <Marker
@@ -407,7 +407,7 @@ export default function MapViewComponent({
             >
               <ModernMarker type={isStart ? 'start' : isEnd ? 'end' : 'poi'} />
               <Callout tooltip>
-                <View style={calloutStyles.modernContainer}>
+                <View style={calloutStyles.modernContainerRoutePoint}>
                   <View style={calloutStyles.modernHeader}>
                     <MaterialCommunityIcons
                       name={isStart ? 'map-marker-check' : 'flag-checkered'}
@@ -422,12 +422,9 @@ export default function MapViewComponent({
                       {isStart ? 'Start' : 'End'}
                     </Text>
                   </View>
-                  <Text style={calloutStyles.modernDescription}>
-                    {marker.title}
-                  </Text>
                   {marker.description && (
                     <Text style={calloutStyles.modernSubtext}>
-                      {marker.description}
+                      {isStart ? 'Interesting start point' : 'Unforgettable journey'}
                     </Text>
                   )}
                 </View>
@@ -591,7 +588,7 @@ const styles = StyleSheet.create({
     marginTop: 16,
     fontSize: 16,
     fontWeight: '600',
-    color: '#0099FF',
+    color: '#FFFFFF',
   },
 });
 
@@ -616,6 +613,18 @@ const modernMarkerStyles = StyleSheet.create({
 });
 
 const calloutStyles = StyleSheet.create({
+  modernContainerRoutePoint: {
+    backgroundColor: '#FFFFFF',
+    borderRadius: 12,
+    padding: 16,
+    maxWidth: 300,
+    minWidth: 200,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.15,
+    shadowRadius: 12,
+    elevation: 8,
+  },
   modernContainer: {
     backgroundColor: '#FFFFFF',
     borderRadius: 12,
