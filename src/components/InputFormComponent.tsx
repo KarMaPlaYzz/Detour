@@ -3,7 +3,6 @@ import { Interest, Location } from '@/types/detour';
 import { BlurView } from 'expo-blur';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import {
-  ActivityIndicator,
   Animated,
   Keyboard,
   ScrollView,
@@ -11,7 +10,7 @@ import {
   Text,
   TextInput,
   TouchableOpacity,
-  View,
+  View
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { IconSymbol } from '../../components/ui/icon-symbol';
@@ -83,6 +82,7 @@ export default function InputFormComponent({
   const [hasRoute, setHasRoute] = useState(false);
   const [dynamicInterests, setDynamicInterests] = useState<string[]>([]);
   const [poiTypeMap, setPoiTypeMap] = useState<{ [key: string]: string }>({});
+  const prevPoiTypesRef = useRef<string>('');
   const [suggestions, setSuggestions] = useState<Array<{mainText: string, secondaryText: string, fullDescription: string}>>([]);
   const [activeSuggestionsField, setActiveSuggestionsField] = useState<'from' | 'to' | null>(null);
   const endInputRef = useRef<TextInput>(null);
@@ -91,13 +91,14 @@ export default function InputFormComponent({
   const suggestionsAnimRef = useRef(new Animated.Value(0));
   const headerAnimRef = useRef(new Animated.Value(0));
   const collapseAnimRef = useRef(new Animated.Value(0));
+  const summaryVisibilityRef = useRef(new Animated.Value(1));
   const prevHasRouteRef = useRef(false);
   const isUpdatingRouteRef = useRef(false);
   const [wasEmpty, setWasEmpty] = useState(true);
   const [isClearing, setIsClearing] = useState(false);
   const [endInputFocused, setEndInputFocused] = useState(false);
   const [startInputFocused, setStartInputFocused] = useState(false);
-  const [selectedTransportMode, setSelectedTransportMode] = useState<'car' | 'walk' | 'bike' | 'transit'>('car');
+  const [selectedTransportMode, setSelectedTransportMode] = useState<'car' | 'walk' | 'bike' | 'transit'>('walk');
   const [isFormExpanded, setIsFormExpanded] = useState(false);
   const isFormExpandedRef = useRef(false);
   const [focusOnExpand, setFocusOnExpand] = useState<'start' | 'end' | null>(null);
@@ -105,19 +106,25 @@ export default function InputFormComponent({
   // Update interests when available POI types change
   useEffect(() => {
     if (detourRoute && Object.keys(availablePOITypes).length > 0) {
-      // Store the raw type -> formatted name mapping
-      setPoiTypeMap(availablePOITypes);
+      const poiTypesKey = JSON.stringify(availablePOITypes);
       
-      // Get formatted names for display
-      const interestNames = Object.values(availablePOITypes);
-      setDynamicInterests(interestNames);
-      if (!selectedInterest || !interestNames.includes(selectedInterest)) {
-        setSelectedInterest(interestNames[0]);
+      // Only reset if the POI types have actually changed
+      if (poiTypesKey !== prevPoiTypesRef.current) {
+        prevPoiTypesRef.current = poiTypesKey;
+        // Store the raw type -> formatted name mapping
+        setPoiTypeMap(availablePOITypes);
+        
+        // Get formatted names for display
+        const interestNames = Object.values(availablePOITypes);
+        setDynamicInterests(interestNames);
+        // Don't auto-select any interest - let user choose
+        setSelectedInterest('');
       }
     } else {
       setDynamicInterests([]);
       setPoiTypeMap({});
       setSelectedInterest('');
+      prevPoiTypesRef.current = '';
     }
   }, [availablePOITypes, detourRoute]);
 
@@ -215,20 +222,24 @@ export default function InputFormComponent({
 
   // Animate form expand/collapse
   useEffect(() => {
-    isFormExpandedRef.current = isFormExpanded;
+    // Collapse form when loading starts
+    const shouldCollapse = isLoading || !isFormExpanded;
+    const targetExpanded = isFormExpanded && !isLoading;
+    
+    isFormExpandedRef.current = targetExpanded;
     
     // Stop any ongoing animation first
     collapseAnimRef.current.stopAnimation(() => {
       // Then start the new animation
       Animated.timing(collapseAnimRef.current, {
-        toValue: isFormExpanded ? 1 : 0,
+        toValue: targetExpanded ? 1 : 0,
         duration: 300,
         useNativeDriver: false,
       }).start();
     });
 
     // Focus the appropriate input after expansion
-    if (isFormExpanded && focusOnExpand) {
+    if (targetExpanded && focusOnExpand) {
       setTimeout(() => {
         if (focusOnExpand === 'start') {
           startInputRef.current?.focus();
@@ -238,7 +249,7 @@ export default function InputFormComponent({
         setFocusOnExpand(null);
       }, 350);
     }
-  }, [isFormExpanded, focusOnExpand]);
+  }, [isFormExpanded, focusOnExpand, isLoading]);
 
   // Auto-focus end input when expanded
   useEffect(() => {
@@ -269,6 +280,19 @@ export default function InputFormComponent({
     }
     prevHasRouteRef.current = hasRoute;
   }, [hasRoute]);
+
+  // Animate summary visibility based on loading state
+  useEffect(() => {
+    // Stop any ongoing animation first
+    summaryVisibilityRef.current.stopAnimation(() => {
+      // Then start the new animation
+      Animated.timing(summaryVisibilityRef.current, {
+        toValue: isLoading ? 0 : 1,
+        duration: 300,
+        useNativeDriver: false,
+      }).start();
+    });
+  }, [isLoading]);
 
   // Fetch place suggestions
   const fetchSuggestions = useCallback(async (query: string) => {
@@ -349,7 +373,7 @@ export default function InputFormComponent({
     fetchSuggestions(text);
   }, [fetchSuggestions]);
 
-  // Handle end input focus to expand form
+  // Handle end or start input focus to expand form
   useEffect(() => {
     if ((endInputFocused || startInputFocused) && hasRoute) {
       setIsFormExpanded(true);
@@ -416,6 +440,8 @@ export default function InputFormComponent({
               outputRange: ['transparent', theme.colors.cardBorder],
             }),
             borderBottomWidth: 1,
+            opacity: summaryVisibilityRef.current,
+            pointerEvents: isLoading ? 'none' : 'auto',
           }
         ]}
       >
@@ -539,10 +565,12 @@ export default function InputFormComponent({
               style={[
                 styles.routeSummary,
                 {
+                  opacity: summaryVisibilityRef.current,
                   maxHeight: collapseAnimRef.current.interpolate({
                     inputRange: [0, 1],
                     outputRange: [135, 400],
                   }),
+                  pointerEvents: isLoading ? 'none' : 'auto',
                 }
               ]}
             >
@@ -569,7 +597,7 @@ export default function InputFormComponent({
                     onFocus={() => setStartInputFocused(true)}
                     onBlur={() => setStartInputFocused(false)}
                     autoCapitalize="words"
-                    editable={true}
+                    editable={!isLoading}
                   />
                 </View>
 
@@ -597,7 +625,7 @@ export default function InputFormComponent({
                     onFocus={() => setEndInputFocused(true)}
                     onBlur={() => setEndInputFocused(false)}
                     autoCapitalize="words"
-                    editable={true}
+                    editable={!isLoading}
                   />
                 </View>
               </Animated.View>
@@ -693,6 +721,8 @@ export default function InputFormComponent({
                   }],
                   overflow: 'hidden',
                   marginTop: theme.spacing.md,
+                  gap: theme.spacing.md,
+                  flexDirection: 'column',
                 }}
               >
                 {/* Transportation Mode Selection */}
@@ -703,32 +733,6 @@ export default function InputFormComponent({
                   </View>
                   
                   <View style={styles.transportButtons}>
-                    <TouchableOpacity
-                      style={[
-                        styles.transportButton,
-                        selectedTransportMode === 'car' && styles.transportButtonActive,
-                      ]}
-                      onPress={() => {
-                        setSelectedTransportMode('car');
-                        onTransportModeChange?.('car');
-                      }}
-                      disabled={isLoading}
-                    >
-                      <IconSymbol
-                        name="car.fill"
-                        size={20}
-                        color={selectedTransportMode === 'car' ? theme.colors.card : theme.colors.textSecondary}
-                      />
-                      <Text
-                        style={[
-                          styles.transportDuration,
-                          selectedTransportMode === 'car' && styles.transportDurationActive,
-                        ]}
-                      >
-                        {formatDuration(detourRoute?.durations?.car)}
-                      </Text>
-                    </TouchableOpacity>
-
                     <TouchableOpacity
                       style={[
                         styles.transportButton,
@@ -752,6 +756,32 @@ export default function InputFormComponent({
                         ]}
                       >
                         {formatDuration(detourRoute?.durations?.walk)}
+                      </Text>
+                    </TouchableOpacity>
+
+                    <TouchableOpacity
+                      style={[
+                        styles.transportButton,
+                        selectedTransportMode === 'car' && styles.transportButtonActive,
+                      ]}
+                      onPress={() => {
+                        setSelectedTransportMode('car');
+                        onTransportModeChange?.('car');
+                      }}
+                      disabled={isLoading}
+                    >
+                      <IconSymbol
+                        name="car.fill"
+                        size={20}
+                        color={selectedTransportMode === 'car' ? theme.colors.card : theme.colors.textSecondary}
+                      />
+                      <Text
+                        style={[
+                          styles.transportDuration,
+                          selectedTransportMode === 'car' && styles.transportDurationActive,
+                        ]}
+                      >
+                        {formatDuration(detourRoute?.durations?.car)}
                       </Text>
                     </TouchableOpacity>
 
@@ -837,23 +867,7 @@ export default function InputFormComponent({
                   </ScrollView>
                 </View>
 
-                {/* Action Buttons */}
-                <View style={styles.actionButtons}>
-                  <TouchableOpacity
-                    style={[styles.primaryButton, isLoading && styles.primaryButtonDisabled]}
-                    onPress={handleManualSearch}
-                    disabled={isLoading}
-                  >
-                    {isLoading ? (
-                      <ActivityIndicator color="#FFFFFF" size="small" />
-                    ) : (
-                      <>
-                        <IconSymbol name="checkmark.circle.fill" size={18} color="#FFFFFF" />
-                        <Text style={styles.primaryButtonText}>Confirm</Text>
-                      </>
-                    )}
-                  </TouchableOpacity>
-                </View>
+
               </Animated.View>
             )}
           </Animated.View>

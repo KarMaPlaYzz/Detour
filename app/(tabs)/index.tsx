@@ -231,6 +231,7 @@ export default function ExploreScreen() {
         pois={detourRoute?.pois}
         initialRegion={initialRegion}
         centerOffset={{x:0, y:0.6}}
+        isLoading={isLoading}
       />
 
       {/* Floating Search Bar */}

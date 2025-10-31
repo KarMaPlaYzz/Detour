@@ -1,7 +1,8 @@
 import { Location, Marker as MarkerType } from '@/types/detour';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
+import { BlurView } from 'expo-blur';
 import React from 'react';
-import { Keyboard, Pressable, StyleSheet, Text, View } from 'react-native';
+import { ActivityIndicator, Keyboard, Pressable, StyleSheet, Text, View } from 'react-native';
 import MapView, { Callout, Marker, Polyline, PROVIDER_GOOGLE } from 'react-native-maps';
 
 // Helper function to format POI type
@@ -65,6 +66,7 @@ interface MapViewComponentProps {
     x: number; // Horizontal offset in percentage (-1 to 1, where -0.5 = left half, 0 = center, 0.5 = right half)
     y: number; // Vertical offset in percentage (-1 to 1, where -0.5 = top half, 0 = center, 0.5 = bottom half)
   };
+  isLoading?: boolean;
 }
 
 // Modern custom marker component - memoized to prevent unnecessary re-renders
@@ -156,6 +158,7 @@ export default function MapViewComponent({
   onMapReady,
   showUserLocation = true,
   centerOffset = { x: 0, y: 0 },
+  isLoading = false,
 }: MapViewComponentProps) {
   const mapRef = React.useRef<MapView>(null);
   const [offsetInitialRegion, setOffsetInitialRegion] = React.useState(initialRegion);
@@ -511,6 +514,14 @@ export default function MapViewComponent({
           );
         })}
       </MapView>
+      {isLoading && (
+        <BlurView intensity={15} tint='light' style={styles.loadingOverlay}>
+          <View style={styles.loadingOverlay}>
+            <ActivityIndicator size="large" color="#FFFFFF" />
+            <Text style={styles.loadingText}>Calculating route...</Text>
+          </View>
+        </BlurView>
+      )}
       </Pressable>
     </View>
   );
@@ -526,6 +537,23 @@ const styles = StyleSheet.create({
   map: {
     width: '100%',
     height: '100%',
+  },
+  loadingOverlay: {
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    right: 0,
+    bottom: 0,
+    justifyContent: 'center',
+    alignItems: 'center',
+    backgroundColor: 'rgba(0, 0, 0, 0.4)',
+    zIndex: 999,
+  },
+  loadingText: {
+    marginTop: 16,
+    fontSize: 16,
+    fontWeight: '600',
+    color: '#0099FF',
   },
 });
 

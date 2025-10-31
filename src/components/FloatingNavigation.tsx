@@ -37,9 +37,31 @@ export const FloatingNavigation: React.FC<FloatingNavigationProps> = ({
   const pathname = usePathname();
   const heightAnim = React.useRef(new Animated.Value(0)).current;
   const opacityAnim = React.useRef(new Animated.Value(0)).current;
+  const [displayedActions, setDisplayedActions] = React.useState(dynamicActions);
+  const prevLengthRef = React.useRef(dynamicActions.length);
+  const animationCallbackRef = React.useRef<(() => void) | null>(null);
 
   React.useEffect(() => {
+    const isClosing = dynamicActions.length === 0 && prevLengthRef.current > 0;
     const animateTo = dynamicActions.length > 0 ? 1 : 0;
+    
+    // Always update displayed actions with new actions
+    setDisplayedActions(dynamicActions);
+    
+    // Cancel previous callback if it exists
+    if (animationCallbackRef.current) {
+      animationCallbackRef.current = null;
+    }
+    
+    // Create new callback for this animation
+    const onAnimationComplete = () => {
+      // Only clear if we were closing and animation is done
+      if (isClosing) {
+        setDisplayedActions([]);
+      }
+    };
+    
+    animationCallbackRef.current = onAnimationComplete;
     
     Animated.parallel([
       Animated.timing(heightAnim, {
@@ -52,8 +74,14 @@ export const FloatingNavigation: React.FC<FloatingNavigationProps> = ({
         duration: 200,
         useNativeDriver: false,
       }),
-    ]).start();
-  }, [dynamicActions.length, heightAnim, opacityAnim]);
+    ]).start(() => {
+      if (animationCallbackRef.current === onAnimationComplete) {
+        onAnimationComplete();
+      }
+    });
+    
+    prevLengthRef.current = dynamicActions.length;
+  }, [dynamicActions.length]);
 
   const isExplore = !pathname.includes('my-detours');
   const isMyDetours = pathname.includes('my-detours');
@@ -73,16 +101,6 @@ export const FloatingNavigation: React.FC<FloatingNavigationProps> = ({
     },
   ];
 
-  // Calculate dynamic section width based on number of actions
-  // Each button is 56px (minWidth), with 8px gap between them
-  // Formula: (count * 56) + ((count - 1) * 28)
-  const BUTTON_WIDTH = 56;
-  const BUTTON_GAP = 28;
-  const dynamicWidth = heightAnim.interpolate({
-    inputRange: [0, 1],
-    outputRange: [0, dynamicActions.length > 0 ? dynamicActions.length * BUTTON_WIDTH + Math.max(0, dynamicActions.length - 1) * BUTTON_GAP : 0],
-  });
-
   return (
     <BlurView intensity={15} tint="light" style={[styles.blurContainer, { bottom: bottomOffset }]}>
       <View style={styles.contentContainer}>
@@ -91,12 +109,15 @@ export const FloatingNavigation: React.FC<FloatingNavigationProps> = ({
           style={[
             styles.dynamicSection,
             {
-              width: dynamicWidth,
+              width: heightAnim.interpolate({
+                inputRange: [0, 1],
+                outputRange: [0, displayedActions.length > 0 ? displayedActions.length * 56 + Math.max(0, displayedActions.length - 1) * 28 : 0],
+              }),
               opacity: opacityAnim,
             },
           ]}
         >
-          {dynamicActions.map((action) => (
+          {displayedActions.map((action) => (
             <TouchableOpacity
               key={action.id}
               style={[
@@ -118,7 +139,7 @@ export const FloatingNavigation: React.FC<FloatingNavigationProps> = ({
         </Animated.View>
 
         {/* Divider when dynamic actions exist */}
-        {dynamicActions.length > 0 && (
+        {displayedActions.length > 0 && (
           <View style={styles.divider} />
         )}
 
@@ -156,7 +177,9 @@ export const FloatingNavigation: React.FC<FloatingNavigationProps> = ({
       </View>
     </BlurView>
   );
-};const styles = StyleSheet.create({
+};
+
+const styles = StyleSheet.create({
   blurContainer: {
     position: 'absolute',
     bottom: 20,
