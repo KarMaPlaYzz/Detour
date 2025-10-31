@@ -67,7 +67,10 @@ interface MapViewComponentProps {
     y: number; // Vertical offset in percentage (-1 to 1, where -0.5 = top half, 0 = center, 0.5 = bottom half)
   };
   isLoading?: boolean;
-}
+  onPress?: (coordinate: Location) => void; // Callback when user taps on the map to add waypoint
+  onRegionChange?: (region: { latitude: number; longitude: number; latitudeDelta: number; longitudeDelta: number }) => void; // Called continuously during map pan/zoom
+  onRegionChangeComplete?: (region: { latitude: number; longitude: number; latitudeDelta: number; longitudeDelta: number }) => void; // Called when map pan/zoom completes
+  }
 
 // Modern custom marker component - memoized to prevent unnecessary re-renders
 const ModernMarker = React.memo(({
@@ -159,9 +162,43 @@ export default function MapViewComponent({
   showUserLocation = true,
   centerOffset = { x: 0, y: 0 },
   isLoading = false,
+  onPress,
+  onRegionChange,
+  onRegionChangeComplete,
 }: MapViewComponentProps) {
   const mapRef = React.useRef<MapView>(null);
   const [offsetInitialRegion, setOffsetInitialRegion] = React.useState(initialRegion);
+
+  // Handle map press for adding waypoints
+  const handleMapPress = React.useCallback(
+    (e: any) => {
+      if (onPress) {
+        const { latitude, longitude } = e.nativeEvent.coordinate;
+        onPress({ latitude, longitude });
+      }
+    },
+    [onPress]
+  );
+
+  // Handle region changes during pan/zoom
+  const handleRegionChange = React.useCallback(
+    (region: any) => {
+      if (onRegionChange) {
+        onRegionChange(region);
+      }
+    },
+    [onRegionChange]
+  );
+
+  // Handle region change completion
+  const handleRegionChangeComplete = React.useCallback(
+    (region: any) => {
+      if (onRegionChangeComplete) {
+        onRegionChangeComplete(region);
+      }
+    },
+    [onRegionChangeComplete]
+  );
 
   // Apply center offset to the initial region
   React.useEffect(() => {
@@ -305,17 +342,19 @@ export default function MapViewComponent({
         onPress={() => Keyboard.dismiss()}
       >
         <MapView
+          cacheEnabled={true}
           ref={mapRef}
           style={styles.map}
           provider={PROVIDER_GOOGLE}
           initialRegion={offsetInitialRegion}
           /*customMapStyle={modernMapStyle}*/
           onMapReady={onMapReady}
+          onPress={handleMapPress}
+          onRegionChange={handleRegionChange}
+          onRegionChangeComplete={handleRegionChangeComplete}
           showsUserLocation={showUserLocation}
           showsMyLocationButton={false}
           showsPointsOfInterest={true}
-          showsTraffic={false}
-          showsIndoors={false}
           zoomEnabled={true}
           scrollEnabled={true}
           pitchEnabled={true}
