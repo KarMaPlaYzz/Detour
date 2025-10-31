@@ -1,401 +1,976 @@
 import { theme } from '@/styles/theme';
 import { Interest, Location } from '@/types/detour';
-import { useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import {
-    ActivityIndicator,
-    StyleSheet,
-    Text,
-    TextInput,
-    TouchableOpacity,
-    View,
+  ActivityIndicator,
+  Animated,
+  Keyboard,
+  ScrollView,
+  StyleSheet,
+  Text,
+  TextInput,
+  TouchableOpacity,
+  View,
 } from 'react-native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { IconSymbol } from '../../components/ui/icon-symbol';
 
+/**
+ * Format duration in seconds to a human-readable string
+ * Returns hours and minutes for longer durations, or just minutes for shorter ones
+ */
+function formatDuration(seconds: number | undefined): string {
+  if (!seconds || seconds <= 0) return '—';
+  
+  const hours = Math.floor(seconds / 3600);
+  const minutes = Math.floor((seconds % 3600) / 60);
+  
+  if (hours > 0) {
+    return `${hours}h ${minutes}m`;
+  }
+  if (seconds < 60) {
+    return `1m`;
+  }
+
+  return `${minutes} m`;
+}
+
 interface InputFormComponentProps {
-  onFindDetour: (start: string, end: string, interest: Interest) => void;
+  onFindDetour: (start: string, end: string) => void;
+  onSearchPOIs?: (interest: string) => void;
+  onTransportModeChange?: (mode: 'car' | 'walk' | 'bike' | 'transit') => void;
+  onReset?: () => void;
   isLoading?: boolean;
   currentLocation?: Location | null;
+  detourRoute?: any | null;
+  availablePOITypes?: { [key: string]: string };
 }
 
 const INTERESTS: Interest[] = ['Street Art', 'Architecture', 'Cafes'];
 
+// Map POI categories to interests
+const POI_CATEGORY_MAP: { [key: string]: Interest } = {
+  'street art': 'Street Art',
+  'art': 'Street Art',
+  'mural': 'Street Art',
+  'graffiti': 'Street Art',
+  'architecture': 'Architecture',
+  'building': 'Architecture',
+  'monument': 'Architecture',
+  'historic': 'Architecture',
+  'cafe': 'Cafes',
+  'coffee': 'Cafes',
+  'restaurant': 'Cafes',
+  'bar': 'Cafes',
+};
+
 export default function InputFormComponent({
   onFindDetour,
+  onSearchPOIs,
+  onTransportModeChange,
+  onReset,
   isLoading = false,
   currentLocation,
+  detourRoute,
+  availablePOITypes = {},
 }: InputFormComponentProps) {
-  const [startInput, setStartInput] = useState('');
+  const insets = useSafeAreaInsets();
   const [endInput, setEndInput] = useState('');
-  const [selectedInterest, setSelectedInterest] = useState<Interest>('Street Art');
-  const [errors, setErrors] = useState<{ start?: string; end?: string }>({});
-  const [useCurrentLocation, setUseCurrentLocation] = useState(false);
+  const [startInput, setStartInput] = useState('');
+  const [selectedInterest, setSelectedInterest] = useState<string>('');
+  const [isExpanded, setIsExpanded] = useState(false);
+  const [hasRoute, setHasRoute] = useState(false);
+  const [dynamicInterests, setDynamicInterests] = useState<string[]>([]);
+  const [poiTypeMap, setPoiTypeMap] = useState<{ [key: string]: string }>({});
+  const [suggestions, setSuggestions] = useState<string[]>([]);
+  const [activeSuggestionsField, setActiveSuggestionsField] = useState<'from' | 'to' | null>(null);
+  const endInputRef = useRef<TextInput>(null);
+  const startInputRef = useRef<TextInput>(null);
+  const clearButtonAnimRef = useRef(new Animated.Value(0));
+  const prevHasRouteRef = useRef(false);
+  const isUpdatingRouteRef = useRef(false);
+  const [wasEmpty, setWasEmpty] = useState(true);
+  const [isClearing, setIsClearing] = useState(false);
+  const [endInputFocused, setEndInputFocused] = useState(false);
+  const [selectedTransportMode, setSelectedTransportMode] = useState<'car' | 'walk' | 'bike' | 'transit'>('car');
 
-  // Auto-fill start with "Current Location" if available
+  // Update interests when available POI types change
   useEffect(() => {
-    if (currentLocation && !startInput) {
-      setUseCurrentLocation(true);
+    if (detourRoute && Object.keys(availablePOITypes).length > 0) {
+      // Store the raw type -> formatted name mapping
+      setPoiTypeMap(availablePOITypes);
+      
+      // Get formatted names for display
+      const interestNames = Object.values(availablePOITypes);
+      setDynamicInterests(interestNames);
+      if (!selectedInterest || !interestNames.includes(selectedInterest)) {
+        setSelectedInterest(interestNames[0]);
+      }
+    } else {
+      setDynamicInterests([]);
+      setPoiTypeMap({});
+      setSelectedInterest('');
     }
-  }, [currentLocation, startInput]);
+  }, [availablePOITypes, detourRoute]);
 
-  const validateInputs = (): boolean => {
-    const newErrors: { start?: string; end?: string } = {};
-
-    if (!useCurrentLocation && !startInput.trim()) {
-      newErrors.start = 'Start address required';
+  // Animate clear button in/out - only when visibility state changes
+  useEffect(() => {
+    const isEmpty = endInput.length === 0;
+    
+    if (isEmpty !== wasEmpty) {
+      setWasEmpty(isEmpty);
+      
+      if (isEmpty) {
+        // When input becomes empty, trigger clearing animation
+        clearButtonAnimRef.current.setValue(1);
+        setIsClearing(true);
+        Animated.timing(clearButtonAnimRef.current, {
+          toValue: 0,
+          duration: 200,
+          useNativeDriver: false,
+        }).start(() => {
+          setIsClearing(false);
+        });
+      } else {
+        // When input becomes non-empty, roll in animation
+        clearButtonAnimRef.current.setValue(0);
+        Animated.timing(clearButtonAnimRef.current, {
+          toValue: 1,
+          duration: 200,
+          useNativeDriver: false,
+        }).start();
+      }
     }
+  }, [endInput.length, wasEmpty]);
 
-    if (!endInput.trim()) {
-      newErrors.end = 'End address required';
-    }
-
-    setErrors(newErrors);
-    return Object.keys(newErrors).length === 0;
+  const handleClearInput = () => {
+    setIsClearing(true);
+    setEndInput('');
+    setSuggestions([]);
+    setActiveSuggestionsField(null);
   };
 
-  const handleFindDetour = () => {
-    if (validateInputs()) {
-      const startValue = useCurrentLocation && currentLocation 
-        ? `${currentLocation.latitude},${currentLocation.longitude}`
-        : startInput;
-      onFindDetour(startValue, endInput, selectedInterest);
+  // Hide suggestions when keyboard hides AND input is not focused
+  useEffect(() => {
+    const keyboardDidHide = Keyboard.addListener(
+      'keyboardDidHide',
+      () => {
+        if (!endInputFocused) {
+          setSuggestions([]);
+          setActiveSuggestionsField(null);
+        }
+      }
+    );
+
+    return () => {
+      keyboardDidHide.remove();
+    };
+  }, [endInputFocused]);
+
+  // Detect route changes
+  useEffect(() => {
+    if (detourRoute) {
+      setHasRoute(true);
+    } else {
+      setHasRoute(false);
+    }
+  }, [detourRoute]);
+
+  // Auto-focus end input when expanded
+  useEffect(() => {
+    if (isExpanded && endInputRef.current && !hasRoute) {
+      setTimeout(() => {
+        endInputRef.current?.focus();
+      }, 100);
+    }
+  }, [isExpanded, hasRoute]);
+
+  // Handle reset from parent - only clear when transitioning from route found to no route
+  useEffect(() => {
+    if (prevHasRouteRef.current && !hasRoute) {
+      // We had a route but now we don't - check if this is a real reset or just a route update
+      if (!isUpdatingRouteRef.current) {
+        // User clicked reset button, clear the inputs
+        setEndInput('');
+        setStartInput('');
+        setSuggestions([]);
+        setActiveSuggestionsField(null);
+      }
+      isUpdatingRouteRef.current = false;
+    }
+    prevHasRouteRef.current = hasRoute;
+  }, [hasRoute]);
+
+  // Fetch place suggestions
+  const fetchSuggestions = useCallback(async (query: string) => {
+    if (query.trim().length < 2) {
+      setSuggestions([]);
+      return;
+    }
+
+    try {
+      const apiKey = process.env.EXPO_PUBLIC_GOOGLE_MAPS_API_KEY;
+      
+      if (!apiKey) {
+        console.warn('Google Maps API key not configured in EXPO_PUBLIC_GOOGLE_MAPS_API_KEY');
+        return;
+      }
+
+      // Build URL with location biasing if we have current location
+      let url = `https://maps.googleapis.com/maps/api/place/autocomplete/json?input=${encodeURIComponent(query)}&key=${apiKey}`;
+      
+      if (currentLocation) {
+        // Add location bias to prioritize results near user
+        // radius in meters (50km = 5000m)
+        url += `&location=${currentLocation.latitude},${currentLocation.longitude}&radius=50000`;
+      }
+      
+      const response = await fetch(url);
+      const data = await response.json();
+      
+      if (data.predictions) {
+        setSuggestions(data.predictions.map((p: any) => p.description));
+      } else if (data.error_message) {
+        console.error('API Error:', data.error_message);
+      }
+    } catch (error) {
+      console.error('Autocomplete error:', error);
+    }
+  }, [currentLocation]);
+
+  // Handle end input change with suggestions
+  const handleEndInputChange = useCallback((text: string) => {
+    setEndInput(text);
+    setActiveSuggestionsField('to');
+    fetchSuggestions(text);
+  }, [fetchSuggestions]);
+
+  // Handle start input change with suggestions
+  const handleStartInputChange = useCallback((text: string) => {
+    setStartInput(text);
+    setActiveSuggestionsField('from');
+    fetchSuggestions(text);
+  }, [fetchSuggestions]);
+
+  const handleSuggestionSelect = (suggestion: string) => {
+    if (activeSuggestionsField === 'to') {
+      setEndInput(suggestion);
+      setSuggestions([]);
+      setActiveSuggestionsField(null);
+      // Trigger search immediately after selecting destination
+      if (currentLocation) {
+        const startValue = `${currentLocation.latitude},${currentLocation.longitude}`;
+        // Use setTimeout to allow state update first
+        isUpdatingRouteRef.current = true;
+        setTimeout(() => {
+          onFindDetour(startValue, suggestion);
+        }, 0);
+      }
+    } else if (activeSuggestionsField === 'from') {
+      setStartInput(suggestion);
+      setSuggestions([]);
+      setActiveSuggestionsField(null);
+      // If end is already filled, search with new start location
+      if (endInput.trim()) {
+        isUpdatingRouteRef.current = true;
+        setTimeout(() => {
+          onFindDetour(suggestion, endInput);
+        }, 0);
+      }
+    }
+  };
+
+  const handleSwap = () => {
+    const temp = startInput;
+    setStartInput(endInput);
+    setEndInput(temp);
+  };
+
+  const handleManualSearch = () => {
+    if (startInput.trim() && endInput.trim()) {
+      onFindDetour(startInput, endInput);
     }
   };
 
   return (
     <View style={styles.container}>
-      {/* Header */}
-      <View style={styles.header}>
-        <Text style={styles.title}>Find a Detour</Text>
-        <Text style={styles.subtitle}>Plan a scenic route with stops you'll love</Text>
-      </View>
-
-      {/* Location Inputs - Google Maps Style */}
-      <View style={styles.locationCard}>
-        {/* Start Location */}
-        <View style={styles.inputRow}>
-          <View style={styles.iconContainer}>
-            <View style={[styles.dot, styles.dotStart]} />
+      {/* STATE 1: Initial Search - Clean, Simple */}
+      {!hasRoute && (
+        <View style={styles.initialSearchContainer}>
+          {/* Where From? */}
+          <View style={styles.searchSection}>
+            <Text style={styles.sectionLabel}>From</Text>
+            <View style={styles.locationInput}>
+              <IconSymbol name="location.fill.viewfinder" size={24} color={theme.colors.accent} />
+              <Text style={styles.currentLocationText}>Your Location</Text>
+            </View>
           </View>
-          <View style={styles.inputWrapper}>
-            <Text style={styles.inputLabel}>From</Text>
-            {currentLocation && !useCurrentLocation ? (
+
+          {/* Where To? */}
+          <View style={styles.searchSection}>
+            <Text style={styles.sectionLabel}>To</Text>
+            <TouchableOpacity 
+              style={styles.searchField}
+              activeOpacity={0.7}
+            >
+              <IconSymbol name="magnifyingglass" size={18} color={theme.colors.textSecondary} />
               <TextInput
-                style={[styles.input, errors.start && styles.inputError]}
-                placeholder="Starting point"
-                placeholderTextColor={theme.colors.textSecondary}
-                value={startInput}
-                onChangeText={(text) => {
-                  setStartInput(text);
-                  if (errors.start) setErrors({ ...errors, start: undefined });
-                }}
+                ref={endInputRef}
+                style={styles.destinationInput}
+                placeholder="Search destination"
+                placeholderTextColor={theme.colors.textTertiary}
+                value={endInput}
+                onChangeText={handleEndInputChange}
+                onFocus={() => setEndInputFocused(true)}
+                onBlur={() => setEndInputFocused(false)}
                 autoCapitalize="words"
-                editable={!isLoading}
               />
-            ) : (
+              {(endInput.length > 0 || isClearing) && (
+                <Animated.View
+                  style={[
+                    {
+                      opacity: clearButtonAnimRef.current,
+                      transform: [
+                        {
+                          rotateZ: clearButtonAnimRef.current.interpolate({
+                            inputRange: [0, 1],
+                            outputRange: [isClearing ? '90deg' : '-90deg', '0deg'],
+                          }),
+                        },
+                        {
+                          scale: clearButtonAnimRef.current.interpolate({
+                            inputRange: [0, 1],
+                            outputRange: [0.6, 1],
+                          }),
+                        },
+                      ],
+                    },
+                  ]}
+                >
+                  <TouchableOpacity 
+                    onPress={handleClearInput}
+                    hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+                  >
+                    <IconSymbol name="xmark" size={18} color={theme.colors.textTertiary} />
+                  </TouchableOpacity>
+                </Animated.View>
+              )}
+            </TouchableOpacity>
+          </View>
+
+          {/* Suggestions Dropdown */}
+          {suggestions.length > 0 && (
+            <View style={styles.suggestionsContainer}>
+              {suggestions.slice(0, 5).map((item, index) => (
+                <TouchableOpacity
+                  key={index}
+                  style={styles.suggestionItem}
+                  onPress={() => handleSuggestionSelect(item)}
+                >
+                  <IconSymbol name="location" size={16} color={theme.colors.textTertiary} />
+                  <View style={styles.suggestionContent}>
+                    <Text style={styles.suggestionText} numberOfLines={1}>{item}</Text>
+                  </View>
+                  <IconSymbol name="arrow.up.left" size={14} color={theme.colors.textTertiary} />
+                </TouchableOpacity>
+              ))}
+            </View>
+          )}
+        </View>
+      )}
+
+      {/* STATE 2: Route Found - Show Options */}
+      {hasRoute && (
+        <View style={styles.routeFoundContainer}>
+          {/* Editable Route Inputs with Route Summary Style */}
+          <View style={styles.routeSummary}>
+            <View style={styles.routePoint}>
+              <IconSymbol name="location.fill" size={20} color={theme.colors.accent} />
+              <TextInput
+                ref={startInputRef}
+                style={[styles.searchField, styles.routeInput]}
+                placeholder="Your Location"
+                placeholderTextColor={theme.colors.textTertiary}
+                value={startInput}
+                onChangeText={handleStartInputChange}
+                autoCapitalize="words"
+              />
+            </View>
+
+            <View style={styles.routeConnector} />
+
+            <View style={styles.routePoint}>
+              <IconSymbol name="flag.checkered" size={20} color={theme.colors.secondary} />
+              <TextInput
+                ref={endInputRef}
+                style={[styles.searchField, styles.routeInput]}
+                placeholder="To location"
+                placeholderTextColor={theme.colors.textTertiary}
+                value={endInput}
+                onChangeText={handleEndInputChange}
+                autoCapitalize="words"
+              />
+            </View>
+
+            {/* Suggestions Dropdown for From/To */}
+            {suggestions.length > 0 && (
+              <View style={styles.suggestionsContainer}>
+                {suggestions.slice(0, 5).map((item, index) => (
+                  <TouchableOpacity
+                    key={index}
+                    style={styles.suggestionItem}
+                    onPress={() => handleSuggestionSelect(item)}
+                  >
+                    <IconSymbol name="location" size={16} color={theme.colors.textTertiary} />
+                    <View style={styles.suggestionContent}>
+                      <Text style={styles.suggestionText} numberOfLines={1}>{item}</Text>
+                    </View>
+                    <IconSymbol name="arrow.up.left" size={14} color={theme.colors.textTertiary} />
+                  </TouchableOpacity>
+                ))}
+              </View>
+            )}
+          </View>
+
+          {/* Transportation Mode Selection */}
+          <View style={styles.transportSection}>
+            <View style={styles.transportHeader}>
+              <IconSymbol name="car.fill" size={18} color={theme.colors.accent} />
+              <Text style={styles.transportTitle}>How will you travel?</Text>
+            </View>
+            
+            <View style={styles.transportButtons}>
               <TouchableOpacity
-                style={styles.currentLocationField}
+                style={[
+                  styles.transportButton,
+                  selectedTransportMode === 'car' && styles.transportButtonActive,
+                ]}
                 onPress={() => {
-                  setUseCurrentLocation(!useCurrentLocation);
-                  if (!useCurrentLocation) {
-                    setStartInput('');
-                    setErrors({ ...errors, start: undefined });
-                  }
+                  setSelectedTransportMode('car');
+                  onTransportModeChange?.('car');
                 }}
                 disabled={isLoading}
               >
-                <Text style={styles.currentLocationValue}>
-                  📍 Your location
+                <IconSymbol
+                  name="car.fill"
+                  size={20}
+                  color={selectedTransportMode === 'car' ? theme.colors.card : theme.colors.textSecondary}
+                />
+                <Text
+                  style={[
+                    styles.transportDuration,
+                    selectedTransportMode === 'car' && styles.transportDurationActive,
+                  ]}
+                >
+                  {formatDuration(detourRoute?.durations?.car)}
                 </Text>
               </TouchableOpacity>
-            )}
-            {errors.start && <Text style={styles.errorText}>{errors.start}</Text>}
-          </View>
-          {currentLocation && (
-            <TouchableOpacity
-              style={styles.locationToggle}
-              onPress={() => {
-                setUseCurrentLocation(!useCurrentLocation);
-                if (!useCurrentLocation) {
-                  setStartInput('');
-                  setErrors({ ...errors, start: undefined });
-                }
-              }}
-              disabled={isLoading}
-            >
-              <IconSymbol
-                name={useCurrentLocation ? 'location.fill' : 'location'}
-                size={20}
-                color={useCurrentLocation ? theme.colors.accent : theme.colors.textSecondary}
-              />
-            </TouchableOpacity>
-          )}
-        </View>
 
-        {/* Divider */}
-        <View style={styles.divider} />
-
-        {/* End Location */}
-        <View style={styles.inputRow}>
-          <View style={styles.iconContainer}>
-            <View style={[styles.dot, styles.dotEnd]} />
-          </View>
-          <View style={styles.inputWrapper}>
-            <Text style={styles.inputLabel}>To</Text>
-            <TextInput
-              style={[styles.input, errors.end && styles.inputError]}
-              placeholder="Destination"
-              placeholderTextColor={theme.colors.textSecondary}
-              value={endInput}
-              onChangeText={(text) => {
-                setEndInput(text);
-                if (errors.end) setErrors({ ...errors, end: undefined });
-              }}
-              autoCapitalize="words"
-              editable={!isLoading}
-            />
-            {errors.end && <Text style={styles.errorText}>{errors.end}</Text>}
-          </View>
-          <TouchableOpacity
-            style={styles.clearButton}
-            onPress={() => setEndInput('')}
-            disabled={!endInput || isLoading}
-          >
-            {endInput && (
-              <IconSymbol
-                name="xmark.circle.fill"
-                size={20}
-                color={theme.colors.textSecondary}
-              />
-            )}
-          </TouchableOpacity>
-        </View>
-
-        {/* Swap Button */}
-        <TouchableOpacity
-          style={styles.swapButton}
-          onPress={() => {
-            const temp = startInput;
-            setStartInput(endInput);
-            setEndInput(temp);
-          }}
-          disabled={isLoading || (!startInput && !useCurrentLocation)}
-        >
-          <IconSymbol
-            name="arrow.up.arrow.down"
-            size={18}
-            color={theme.colors.accent}
-          />
-        </TouchableOpacity>
-      </View>
-
-      {/* Interest Selection */}
-      <View style={styles.inputGroup}>
-        <Text style={styles.sectionLabel}>Stop Type</Text>
-        <View style={styles.interestContainer}>
-          {INTERESTS.map((interest) => (
-            <TouchableOpacity
-              key={interest}
-              style={[
-                styles.interestButton,
-                selectedInterest === interest && styles.interestButtonActive,
-              ]}
-              onPress={() => setSelectedInterest(interest)}
-              disabled={isLoading}
-            >
-              <Text
+              <TouchableOpacity
                 style={[
-                  styles.interestButtonText,
-                  selectedInterest === interest && styles.interestButtonTextActive,
+                  styles.transportButton,
+                  selectedTransportMode === 'walk' && styles.transportButtonActive,
                 ]}
+                onPress={() => {
+                  setSelectedTransportMode('walk');
+                  onTransportModeChange?.('walk');
+                }}
+                disabled={isLoading}
               >
-                {interest}
-              </Text>
-            </TouchableOpacity>
-          ))}
-        </View>
-      </View>
+                <IconSymbol
+                  name="figure.walk"
+                  size={20}
+                  color={selectedTransportMode === 'walk' ? theme.colors.card : theme.colors.textSecondary}
+                />
+                <Text
+                  style={[
+                    styles.transportDuration,
+                    selectedTransportMode === 'walk' && styles.transportDurationActive,
+                  ]}
+                >
+                  {formatDuration(detourRoute?.durations?.walk)}
+                </Text>
+              </TouchableOpacity>
 
-      {/* Find Button */}
-      <TouchableOpacity
-        style={[styles.findButton, isLoading && styles.findButtonDisabled]}
-        onPress={handleFindDetour}
-        disabled={isLoading}
-      >
-        {isLoading ? (
-          <ActivityIndicator color={theme.colors.textPrimary} />
-        ) : (
-          <>
-            <IconSymbol
-              name="location.magnifyingglass"
-              size={18}
-              color={theme.colors.textPrimary}
-            />
-            <Text style={styles.findButtonText}>Find Detour</Text>
-          </>
-        )}
-      </TouchableOpacity>
+              <TouchableOpacity
+                style={[
+                  styles.transportButton,
+                  selectedTransportMode === 'bike' && styles.transportButtonActive,
+                ]}
+                onPress={() => {
+                  setSelectedTransportMode('bike');
+                  onTransportModeChange?.('bike');
+                }}
+                disabled={isLoading}
+              >
+                <IconSymbol
+                  name="bicycle"
+                  size={20}
+                  color={selectedTransportMode === 'bike' ? theme.colors.card : theme.colors.textSecondary}
+                />
+                <Text
+                  style={[
+                    styles.transportDuration,
+                    selectedTransportMode === 'bike' && styles.transportDurationActive,
+                  ]}
+                >
+                  {formatDuration(detourRoute?.durations?.bike)}
+                </Text>
+              </TouchableOpacity>
+
+              {/* TODO: Enable transit when API supports it
+              <TouchableOpacity
+                style={[
+                  styles.transportButton,
+                  selectedTransportMode === 'transit' && styles.transportButtonActive,
+                ]}
+                onPress={() => {
+                  setSelectedTransportMode('transit');
+                  onTransportModeChange?.('transit');
+                }}
+                disabled={isLoading}
+              >
+                <IconSymbol
+                  name="bus"
+                  size={20}
+                  color={selectedTransportMode === 'transit' ? theme.colors.card : theme.colors.textSecondary}
+                />
+                <Text
+                  style={[
+                    styles.transportDuration,
+                    selectedTransportMode === 'transit' && styles.transportButtonTextActive,
+                  ]}
+                >
+                  {formatDuration(detourRoute?.durations?.transit)}
+                </Text>
+              </TouchableOpacity>
+              */}
+            </View>
+          </View>
+
+          {/* POI Selection */}
+          <View style={styles.poiSection}>
+            <View style={styles.poiHeader}>
+              <IconSymbol name="sparkles" size={18} color={theme.colors.accent} />
+              <Text style={styles.poiTitle}>What interests you?</Text>
+            </View>
+            
+            <ScrollView 
+              horizontal
+              showsHorizontalScrollIndicator={false}
+              scrollEnabled={dynamicInterests.length > 3}
+              style={styles.poiScroll}
+            >
+              <View style={styles.poiButtons}>
+                {dynamicInterests.length > 0 ? (
+                  dynamicInterests.map((displayName) => {
+                    const rawType = Object.keys(poiTypeMap).find(
+                      key => poiTypeMap[key] === displayName
+                    );
+                    const isActive = selectedInterest === displayName;
+                    
+                    return (
+                      <TouchableOpacity
+                        key={displayName}
+                        style={[
+                          styles.poiButton,
+                          isActive && styles.poiButtonActive,
+                        ]}
+                        onPress={() => {
+                          setSelectedInterest(displayName);
+                          if (onSearchPOIs && rawType) {
+                            onSearchPOIs(rawType);
+                          }
+                        }}
+                        disabled={isLoading}
+                      >
+                        <Text
+                          style={[
+                            styles.poiButtonText,
+                            isActive && styles.poiButtonTextActive,
+                          ]}
+                        >
+                          {displayName}
+                        </Text>
+                      </TouchableOpacity>
+                    );
+                  })
+                ) : (
+                  <Text style={styles.loadingText}>Loading options...</Text>
+                )}
+              </View>
+            </ScrollView>
+          </View>
+
+          {/* Action Buttons */}
+          <View style={styles.actionButtons}>
+            {/*<TouchableOpacity 
+              style={styles.secondaryButton}
+              onPress={handleSwap}
+              disabled={isLoading}
+            >
+              <IconSymbol name="arrow.up.arrow.down" size={18} color={theme.colors.accent} />
+              <Text style={styles.secondaryButtonText}>Swap</Text>
+            </TouchableOpacity>*/}
+
+            <TouchableOpacity
+              style={[styles.primaryButton, isLoading && styles.primaryButtonDisabled]}
+              onPress={handleManualSearch}
+              disabled={isLoading}
+            >
+              {isLoading ? (
+                <ActivityIndicator color="#FFFFFF" size="small" />
+              ) : (
+                <>
+                  <IconSymbol name="checkmark.circle.fill" size={18} color="#FFFFFF" />
+                  <Text style={styles.primaryButtonText}>Confirm</Text>
+                </>
+              )}
+            </TouchableOpacity>
+          </View>
+        </View>
+      )}
     </View>
   );
 }
 
 const styles = StyleSheet.create({
+  /* Main Container */
   container: {
-    backgroundColor: theme.colors.card,
-    borderRadius: theme.borderRadius.md,
-    padding: theme.spacing.lg,
-    ...theme.shadows.md,
+    width: '100%',
+    zIndex: 100,
   },
-  header: {
-    marginBottom: theme.spacing.lg,
-  },
-  title: {
-    ...theme.typography.h2,
-    color: theme.colors.textPrimary,
-    marginBottom: theme.spacing.xs,
-  },
-  subtitle: {
-    ...theme.typography.bodySmall,
-    color: theme.colors.textSecondary,
-  },
-  locationCard: {
-    backgroundColor: theme.colors.background,
-    borderRadius: theme.borderRadius.md,
-    borderWidth: 1,
-    borderColor: theme.colors.cardBorder,
-    overflow: 'hidden',
-    marginBottom: theme.spacing.md,
-  },
-  inputRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
+
+  /* STATE 1: Initial Search */
+  initialSearchContainer: {
     paddingHorizontal: theme.spacing.md,
     paddingVertical: theme.spacing.md,
     gap: theme.spacing.md,
   },
-  iconContainer: {
-    width: 24,
-    height: 24,
-    justifyContent: 'center',
-    alignItems: 'center',
+
+  searchSection: {
+    gap: theme.spacing.xs,
+    opacity: 1.0,
   },
-  dot: {
-    width: 8,
-    height: 8,
-    borderRadius: 4,
-  },
-  dotStart: {
-    backgroundColor: theme.colors.accent,
-  },
-  dotEnd: {
-    backgroundColor: theme.colors.error,
-  },
-  inputWrapper: {
-    flex: 1,
-  },
-  inputLabel: {
+
+  sectionLabel: {
     ...theme.typography.caption,
     color: theme.colors.textSecondary,
-    marginBottom: theme.spacing.xs,
-    fontWeight: '600',
+    textTransform: 'uppercase',
+    letterSpacing: 0.5,
+    paddingHorizontal: theme.spacing.sm,
   },
-  input: {
-    color: theme.colors.textPrimary,
-    ...theme.typography.body,
-    padding: 0,
-    paddingVertical: 4,
-  },
-  currentLocationField: {
-    paddingVertical: 4,
-  },
-  currentLocationValue: {
-    ...theme.typography.body,
-    color: theme.colors.accent,
-    fontWeight: '600',
-  },
-  locationToggle: {
-    padding: theme.spacing.sm,
-  },
-  clearButton: {
-    padding: theme.spacing.sm,
-  },
-  divider: {
-    height: 1,
-    backgroundColor: theme.colors.cardBorder,
-  },
-  swapButton: {
-    position: 'absolute',
-    right: theme.spacing.md,
-    top: '50%',
-    marginTop: -24,
-    backgroundColor: theme.colors.card,
-    borderRadius: 50,
-    width: 44,
-    height: 44,
-    justifyContent: 'center',
+
+  locationInput: {
+    flexDirection: 'row',
     alignItems: 'center',
+    gap: theme.spacing.md,
+    paddingHorizontal: theme.spacing.md,
+    paddingVertical: theme.spacing.md,
+    backgroundColor: theme.colors.accentLight,
+    borderRadius: theme.borderRadius.md,
+    borderWidth: 1,
+    borderColor: theme.colors.accent,
+  },
+
+  currentLocationText: {
+    ...theme.typography.bodySemibold,
+    color: theme.colors.accent,
+  },
+
+  searchField: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: theme.spacing.md,
+    paddingHorizontal: theme.spacing.md,
+    backgroundColor: theme.colors.card,
+    borderRadius: theme.borderRadius.md,
+    borderWidth: 1,
+    borderColor: theme.colors.cardBorder,
+    height: 52,
+    ...theme.shadows.sm,
+  },
+
+  destinationInput: {
+    flex: 1,
+    ...theme.typography.body,
+    color: theme.colors.textPrimary,
+    padding: 0,
+    margin: 0,
+    height: 52,
+    textAlignVertical: 'center',
+    lineHeight: 20,
+  },
+
+  routeInput: {
+    flex: 1,
+    borderWidth: 0,
+    backgroundColor: 'transparent',
+    borderColor: 'transparent',
+    paddingHorizontal: 0,
+    marginHorizontal: 0,
+  },
+
+  suggestionsContainer: {
+    backgroundColor: theme.colors.card,
+    borderRadius: theme.borderRadius.md,
+    marginHorizontal: theme.spacing.sm,
+    borderWidth: 1,
+    borderColor: theme.colors.cardBorder,
+    overflow: 'hidden',
+    ...theme.shadows.md,
+  },
+
+  suggestionItem: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: theme.spacing.md,
+    paddingHorizontal: theme.spacing.md,
+    paddingVertical: theme.spacing.md,
+    borderBottomWidth: 1,
+    borderBottomColor: theme.colors.cardBorder,
+  },
+
+  suggestionContent: {
+    flex: 1,
+  },
+
+  suggestionText: {
+    ...theme.typography.body,
+    color: theme.colors.textPrimary,
+    fontSize: 15,
+  },
+
+  /* STATE 2: Route Found */
+  routeFoundContainer: {
+    paddingHorizontal: theme.spacing.md,
+    paddingVertical: theme.spacing.md,
+    gap: theme.spacing.sm,
+  },
+
+  routeInputsContainer: {
+    backgroundColor: theme.colors.card,
+    borderRadius: theme.borderRadius.lg,
+    padding: theme.spacing.lg,
+    borderWidth: 1,
+    borderColor: theme.colors.cardBorder,
+    gap: theme.spacing.md,
+    ...theme.shadows.sm,
+  },
+
+  routeSummary: {
+    backgroundColor: theme.colors.card,
+    borderRadius: theme.borderRadius.lg,
+    padding: theme.spacing.md,
+    paddingTop: theme.spacing.sm,
+    paddingBottom: theme.spacing.sm,
     borderWidth: 1,
     borderColor: theme.colors.cardBorder,
     ...theme.shadows.sm,
   },
-  inputGroup: {
-    marginBottom: theme.spacing.md,
-  },
-  sectionLabel: {
-    ...theme.typography.bodySmall,
-    color: theme.colors.textSecondary,
-    marginBottom: theme.spacing.sm,
-    fontWeight: '600',
-  },
-  interestContainer: {
+
+  routePoint: {
     flexDirection: 'row',
-    gap: theme.spacing.sm,
-  },
-  interestButton: {
-    flex: 1,
-    backgroundColor: theme.colors.background,
-    borderRadius: theme.borderRadius.sm,
-    paddingHorizontal: theme.spacing.md,
-    paddingVertical: theme.spacing.sm,
     alignItems: 'center',
+    gap: theme.spacing.md,
+  },
+
+  pointText: {
+    flex: 1,
+    ...theme.typography.bodySemibold,
+    color: theme.colors.textPrimary,
+  },
+
+  routeConnector: {
+    width: 2,
+    height: 16,
+    backgroundColor: theme.colors.cardBorder,
+    marginLeft: 4,
+  },
+
+  poiSection: {
+    backgroundColor: theme.colors.card,
+    borderRadius: theme.borderRadius.lg,
+    padding: theme.spacing.lg,
     borderWidth: 1,
     borderColor: theme.colors.cardBorder,
+    gap: theme.spacing.md,
+    ...theme.shadows.sm,
   },
-  interestButtonActive: {
+
+  poiHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: theme.spacing.sm,
+  },
+
+  poiTitle: {
+    ...theme.typography.bodySemibold,
+    color: theme.colors.textPrimary,
+  },
+
+  poiScroll: {
+    flexGrow: 0,
+    marginHorizontal: -theme.spacing.lg,
+    paddingHorizontal: theme.spacing.lg,
+  },
+
+  poiButtons: {
+    flexDirection: 'row',
+    gap: theme.spacing.sm,
+    paddingVertical: theme.spacing.xs,
+  },
+
+  poiButton: {
+    paddingHorizontal: theme.spacing.lg,
+    paddingVertical: theme.spacing.sm,
+    borderRadius: theme.borderRadius.full,
+    borderWidth: 1.5,
+    borderColor: theme.colors.cardBorder,
+    backgroundColor: theme.colors.card,
+    ...theme.shadows.xs,
+  },
+
+  poiButtonActive: {
     backgroundColor: theme.colors.accent,
     borderColor: theme.colors.accent,
   },
-  interestButtonText: {
-    ...theme.typography.bodySmall,
+
+  poiButtonText: {
+    ...theme.typography.buttonSmall,
     color: theme.colors.textSecondary,
-    fontWeight: '600',
   },
-  interestButtonTextActive: {
-    color: theme.colors.textPrimary,
+
+  poiButtonTextActive: {
+    color: theme.colors.card,
   },
-  findButton: {
-    backgroundColor: theme.colors.accent,
-    borderRadius: theme.borderRadius.sm,
-    paddingHorizontal: theme.spacing.lg,
-    paddingVertical: theme.spacing.md,
+
+  loadingText: {
+    ...theme.typography.bodySmall,
+    color: theme.colors.textTertiary,
+    fontStyle: 'italic',
+  },
+
+  actionButtons: {
+    flexDirection: 'row',
+    gap: theme.spacing.md,
+  },
+
+  secondaryButton: {
+    flex: 1,
+    flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
-    flexDirection: 'row',
     gap: theme.spacing.sm,
-    marginTop: theme.spacing.md,
+    paddingHorizontal: theme.spacing.lg,
+    paddingVertical: theme.spacing.md,
+    borderRadius: theme.borderRadius.md,
+    borderWidth: 1.5,
+    borderColor: theme.colors.accent,
+    backgroundColor: theme.colors.card,
+    ...theme.shadows.sm,
   },
-  findButtonDisabled: {
+
+  secondaryButtonText: {
+    ...theme.typography.button,
+    color: theme.colors.accent,
+  },
+
+  primaryButton: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: theme.spacing.sm,
+    paddingHorizontal: theme.spacing.lg,
+    paddingVertical: theme.spacing.md,
+    borderRadius: theme.borderRadius.md,
+    backgroundColor: theme.colors.accent,
+    ...theme.shadows.md,
+  },
+
+  primaryButtonDisabled: {
     opacity: 0.6,
   },
-  findButtonText: {
+
+  primaryButtonText: {
     ...theme.typography.button,
+    color: theme.colors.card,
+  },
+
+  dot: {
+    width: 12,
+    height: 12,
+    borderRadius: 6,
+    flexShrink: 0,
+  },
+
+  dotStart: {
+    backgroundColor: theme.colors.accent,
+  },
+
+  dotEnd: {
+    backgroundColor: theme.colors.secondary,
+  },
+
+  /* Transportation Mode Selection */
+  transportSection: {
+    backgroundColor: theme.colors.card,
+    borderRadius: theme.borderRadius.lg,
+    padding: theme.spacing.md,
+    borderWidth: 1,
+    borderColor: theme.colors.cardBorder,
+    gap: theme.spacing.sm,
+    ...theme.shadows.sm,
+  },
+
+  transportHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: theme.spacing.sm,
+  },
+
+  transportTitle: {
+    ...theme.typography.bodySemibold,
     color: theme.colors.textPrimary,
   },
-  inputError: {
-    borderColor: theme.colors.error,
+
+  transportButtons: {
+    flexDirection: 'row',
+    gap: theme.spacing.sm,
+    justifyContent: 'space-between',
   },
-  errorText: {
+
+  transportButton: {
+    flex: 1,
+    flexDirection: 'column',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: theme.spacing.xs,
+    paddingHorizontal: theme.spacing.md,
+    paddingVertical: theme.spacing.md,
+    borderRadius: theme.borderRadius.full,
+    borderWidth: 1.5,
+    borderColor: theme.colors.cardBorder,
+    backgroundColor: theme.colors.card,
+    minHeight: 40,
+    ...theme.shadows.xs,
+  },
+
+  transportButtonActive: {
+    backgroundColor: theme.colors.accent,
+    borderColor: theme.colors.accent,
+  },
+
+  transportDuration: {
     ...theme.typography.caption,
-    color: theme.colors.error,
-    marginTop: theme.spacing.xs,
+    color: theme.colors.textTertiary,
+    fontSize: 14,
+    flexShrink: 1,
+  },
+
+  transportDurationActive: {
+    color: theme.colors.card,
+    opacity: 0.9,
   },
 });

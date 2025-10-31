@@ -1,15 +1,15 @@
 import { theme } from '@/styles/theme';
 import React, { useState } from 'react';
 import {
-    ActivityIndicator,
-    KeyboardAvoidingView,
-    Modal,
-    Platform,
-    StyleSheet,
-    Text,
-    TextInput,
-    TouchableOpacity,
-    View,
+  ActivityIndicator,
+  KeyboardAvoidingView,
+  Modal,
+  Platform,
+  StyleSheet,
+  Text,
+  TextInput,
+  TouchableOpacity,
+  View,
 } from 'react-native';
 
 interface SaveDetourModalProps {
@@ -139,7 +139,7 @@ const styles = StyleSheet.create({
   },
   backdrop: {
     ...StyleSheet.absoluteFillObject,
-    backgroundColor: 'rgba(0, 0, 0, 0.7)',
+    backgroundColor: 'rgba(0, 0, 0, 0.5)',
   },
   container: {
     backgroundColor: theme.colors.card,
@@ -147,10 +147,12 @@ const styles = StyleSheet.create({
     padding: theme.spacing.xl,
     width: '85%',
     maxWidth: 400,
-    ...theme.shadows.lg,
+    ...theme.shadows.xl,
+    borderWidth: 1,
+    borderColor: theme.colors.cardBorder,
   },
   title: {
-    ...theme.typography.h2,
+    ...theme.typography.h3,
     color: theme.colors.textPrimary,
     marginBottom: theme.spacing.xs,
   },
@@ -160,8 +162,8 @@ const styles = StyleSheet.create({
     marginBottom: theme.spacing.lg,
   },
   input: {
-    backgroundColor: theme.colors.background,
-    borderRadius: theme.borderRadius.sm,
+    backgroundColor: theme.colors.cardBgSecondary,
+    borderRadius: theme.borderRadius.md,
     padding: theme.spacing.md,
     color: theme.colors.textPrimary,
     ...theme.typography.body,
@@ -184,12 +186,12 @@ const styles = StyleSheet.create({
   },
   button: {
     flex: 1,
-    borderRadius: theme.borderRadius.sm,
+    borderRadius: theme.borderRadius.md,
     padding: theme.spacing.md,
     alignItems: 'center',
   },
   cancelButton: {
-    backgroundColor: theme.colors.background,
+    backgroundColor: theme.colors.cardBgSecondary,
     borderWidth: 1,
     borderColor: theme.colors.cardBorder,
   },
@@ -201,10 +203,10 @@ const styles = StyleSheet.create({
   },
   cancelButtonText: {
     ...theme.typography.button,
-    color: theme.colors.textSecondary,
+    color: theme.colors.textPrimary,
   },
   saveButtonText: {
     ...theme.typography.button,
-    color: theme.colors.textPrimary,
+    color: theme.colors.card,
   },
 });

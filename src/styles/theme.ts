@@ -1,19 +1,34 @@
-// Urban Explorer Theme
+// Modern Silicon Valley Theme - Clean, Light, Professional
 export const theme = {
   colors: {
-    background: '#121212',
-    card: '#1E1E1E',
+    // Light, modern palette
+    background: '#FFFFFF',
+    backgroundSecondary: '#F8F9FB',
+    card: '#FFFFFF',
     cardLight: '#FFFFFF',
-    cardBorder: '#2A2A2A',
-    textPrimary: '#FFFFFF',
-    textSecondary: '#B3B3B3',
-    accent: '#00A8FF',
-    accentHover: '#0096E6',
-    routePolyline: '#00A8FF',
-    poiMarker: '#FFD600',
-    error: '#FF4444',
+    cardBorder: '#E8ECEF',
+    cardBgSecondary: '#F5F7FA',
+    
+    // Text
+    textPrimary: '#1A1D23',
+    textSecondary: '#6B7280',
+    textTertiary: '#9CA3AF',
+    
+    // Accents - Modern blue
+    accent: '#0066FF',
+    accentHover: '#0052CC',
+    accentLight: '#E0EAFF',
+    
+    // Status colors
+    routePolyline: '#0066FF',
+    poiMarker: '#00D084',
+    error: '#F04545',
     success: '#00C853',
-    warning: '#FFA726',
+    warning: '#FFA500',
+    
+    // Secondary accents
+    secondary: '#FF6B6B',
+    tertiary: '#FFD700',
   },
   spacing: {
     xs: 4,
@@ -24,26 +39,31 @@ export const theme = {
     xxl: 48,
   },
   borderRadius: {
+    xs: 4,
     sm: 8,
     md: 12,
     lg: 16,
+    xl: 20,
     full: 9999,
   },
   typography: {
     h1: {
-      fontSize: 28,
+      fontSize: 32,
       fontWeight: '700' as const,
-      letterSpacing: 0.5,
+      letterSpacing: -0.5,
+      lineHeight: 40,
     },
     h2: {
-      fontSize: 22,
+      fontSize: 26,
       fontWeight: '700' as const,
-      letterSpacing: 0.3,
+      letterSpacing: -0.3,
+      lineHeight: 32,
     },
     h3: {
-      fontSize: 18,
-      fontWeight: '600' as const,
-      letterSpacing: 0.2,
+      fontSize: 20,
+      fontWeight: '700' as const,
+      letterSpacing: 0,
+      lineHeight: 28,
     },
     body: {
       fontSize: 16,
@@ -55,38 +75,64 @@ export const theme = {
       fontWeight: '400' as const,
       lineHeight: 20,
     },
+    bodySemibold: {
+      fontSize: 16,
+      fontWeight: '600' as const,
+      lineHeight: 24,
+    },
     caption: {
       fontSize: 12,
-      fontWeight: '400' as const,
+      fontWeight: '500' as const,
       lineHeight: 16,
     },
     button: {
       fontSize: 16,
       fontWeight: '600' as const,
-      letterSpacing: 0.5,
+      letterSpacing: 0.3,
+      lineHeight: 20,
+    },
+    buttonSmall: {
+      fontSize: 14,
+      fontWeight: '600' as const,
+      letterSpacing: 0.2,
+      lineHeight: 18,
     },
   },
   shadows: {
+    xs: {
+      shadowColor: '#000',
+      shadowOffset: { width: 0, height: 1 },
+      shadowOpacity: 0.05,
+      shadowRadius: 2,
+      elevation: 1,
+    },
     sm: {
       shadowColor: '#000',
       shadowOffset: { width: 0, height: 2 },
-      shadowOpacity: 0.25,
+      shadowOpacity: 0.08,
       shadowRadius: 4,
-      elevation: 3,
+      elevation: 2,
     },
     md: {
       shadowColor: '#000',
       shadowOffset: { width: 0, height: 4 },
-      shadowOpacity: 0.3,
+      shadowOpacity: 0.1,
       shadowRadius: 8,
-      elevation: 6,
+      elevation: 4,
     },
     lg: {
       shadowColor: '#000',
       shadowOffset: { width: 0, height: 8 },
-      shadowOpacity: 0.35,
+      shadowOpacity: 0.12,
       shadowRadius: 16,
-      elevation: 10,
+      elevation: 8,
+    },
+    xl: {
+      shadowColor: '#000',
+      shadowOffset: { width: 0, height: 12 },
+      shadowOpacity: 0.15,
+      shadowRadius: 24,
+      elevation: 12,
     },
   },
 };

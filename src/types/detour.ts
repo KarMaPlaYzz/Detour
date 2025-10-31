@@ -4,9 +4,8 @@ export interface Location {
 }
 
 export interface POI {
+  [key: string]: any;
   name: string;
-  vicinity: string;
-  rating?: number;
   location: Location;
 }
 
@@ -21,8 +20,15 @@ export interface DetourRoute {
   coordinates: Location[];
   encodedPolyline: string;
   markers: Marker[];
-  poi: POI;
-  interest: string;
+  poi?: POI;
+  pois?: POI[];
+  interest?: string;
+  durations?: {
+    car?: number;        // seconds
+    walk?: number;       // seconds
+    bike?: number;       // seconds
+    transit?: number;    // seconds
+  };
 }
 
 export interface SavedDetour {
