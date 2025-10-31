@@ -1,3 +1,4 @@
+import { smoothSharpCorners } from '@/services/PolylineSmoothing';
 import { Location, Marker as MarkerType } from '@/types/detour';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import React from 'react';
@@ -61,6 +62,10 @@ interface MapViewComponentProps {
   };
   onMapReady?: () => void;
   showUserLocation?: boolean;
+  centerOffset?: {
+    x: number; // Horizontal offset in percentage (-1 to 1, where -0.5 = left half, 0 = center, 0.5 = right half)
+    y: number; // Vertical offset in percentage (-1 to 1, where -0.5 = top half, 0 = center, 0.5 = bottom half)
+  };
 }
 
 // Modern custom marker component
@@ -75,28 +80,31 @@ const ModernMarker = ({
     switch (type) {
       case 'start':
         return {
-          bgColor: '#0066FF',
+          bgColor: '#1F51BA',
+          borderColor: '#0D35A8',
           iconColor: '#FFFFFF',
-          icon: 'map-marker-check',
-          size: 36 * scale,
+          icon: 'play-circle',
+          size: 28 * scale,
         };
       case 'end':
         return {
-          bgColor: '#FF6B6B',
+          bgColor: '#0099FF',
+          borderColor: '#0077CC',
           iconColor: '#FFFFFF',
-          icon: 'flag-checkered',
-          size: 36 * scale,
+          icon: 'circle',
+          size: 28 * scale,
         };
       case 'poi':
         return {
           bgColor: '#00D084',
           iconColor: '#FFFFFF',
           icon: 'star-circle',
-          size: 48 * scale,
+          size: 32 * scale,
         };
       default:
         return {
-          bgColor: '#0066FF',
+          bgColor: '#1F51BA',
+          borderColor: '#0D35A8',
           iconColor: '#FFFFFF',
           icon: 'map-marker',
           size: 36 * scale,
@@ -107,27 +115,31 @@ const ModernMarker = ({
   const config = getMarkerConfig();
 
   return (
-    <View
-      style={[
-        modernMarkerStyles.container,
-        {
-          width: config.size,
-          height: config.size,
-          backgroundColor: config.bgColor,
-        },
-      ]}
-    >
-      <MaterialCommunityIcons
-        name={config.icon as any}
-        size={config.size * 0.5}
-        color={config.iconColor}
-      />
+    <View style={{ width: config.size, height: config.size, justifyContent: 'center', alignItems: 'center' }}>
       <View
         style={[
-          modernMarkerStyles.pulse,
-          { backgroundColor: config.bgColor },
+          modernMarkerStyles.container,
+          {
+            width: config.size,
+            height: config.size,
+            backgroundColor: config.bgColor,
+            borderColor: config.borderColor,
+            borderWidth: 2,
+          },
         ]}
-      />
+      >
+        <MaterialCommunityIcons
+          name={config.icon as any}
+          size={config.size * 0.5}
+          color={config.iconColor}
+        />
+        <View
+          style={[
+            modernMarkerStyles.pulse,
+            { backgroundColor: config.bgColor },
+          ]}
+        />
+      </View>
     </View>
   );
 };
@@ -144,15 +156,43 @@ export default function MapViewComponent({
   },
   onMapReady,
   showUserLocation = true,
+  centerOffset = { x: 0, y: 0 },
 }: MapViewComponentProps) {
   const mapRef = React.useRef<MapView>(null);
+  const [smoothedCoordinates, setSmoothedCoordinates] = React.useState<Location[]>([]);
+  const [offsetInitialRegion, setOffsetInitialRegion] = React.useState(initialRegion);
+
+  // Apply center offset to the initial region
+  React.useEffect(() => {
+    if (centerOffset.x !== 0 || centerOffset.y !== 0) {
+      // Convert offset percentage to lat/lng delta
+      const latOffset = (centerOffset.y * initialRegion.latitudeDelta) / 2;
+      const lngOffset = (centerOffset.x * initialRegion.longitudeDelta) / 2;
+      
+      setOffsetInitialRegion({
+        ...initialRegion,
+        latitude: initialRegion.latitude + latOffset,
+        longitude: initialRegion.longitude + lngOffset,
+      });
+    } else {
+      setOffsetInitialRegion(initialRegion);
+    }
+  }, [initialRegion, centerOffset]);
+
+  // Smooth only sharp corners when coordinates change
+  React.useEffect(() => {
+    if (coordinates.length > 0) {
+      const smoothed = smoothSharpCorners(coordinates, 0, 5); // More interpolation points for smoother curves
+      setSmoothedCoordinates(smoothed);
+    }
+  }, [coordinates]);
 
   // Update map region when initialRegion changes (e.g., when current location is obtained)
   React.useEffect(() => {
-    if (initialRegion && mapRef.current) {
-      mapRef.current.animateToRegion(initialRegion, 500);
+    if (offsetInitialRegion && mapRef.current) {
+      mapRef.current.animateToRegion(offsetInitialRegion, 500);
     }
-  }, [initialRegion]);
+  }, [offsetInitialRegion]);
 
   // Fit map to show all markers when coordinates change
   React.useEffect(() => {
@@ -176,7 +216,7 @@ export default function MapViewComponent({
           ref={mapRef}
           style={styles.map}
           provider={PROVIDER_GOOGLE}
-          initialRegion={initialRegion}
+          initialRegion={offsetInitialRegion}
           /* customMapStyle={modernMapStyle}*/
           onMapReady={onMapReady}
           showsUserLocation={showUserLocation}
@@ -188,11 +228,11 @@ export default function MapViewComponent({
           rotateEnabled={true}
         >
           {/* Render polyline with modern gradient effect */}
-          {coordinates.length > 0 && (
+          {smoothedCoordinates.length > 0 && (
           <>
             {/* Background polyline for depth */}
             <Polyline
-              coordinates={coordinates}
+              coordinates={smoothedCoordinates}
               strokeColor="rgba(0, 102, 255, 0.15)"
               strokeWidth={12}
               lineCap="round"
@@ -200,7 +240,7 @@ export default function MapViewComponent({
             />
             {/* Main polyline */}
             <Polyline
-              coordinates={coordinates}
+              coordinates={smoothedCoordinates}
               strokeColor="#0066FF"
               strokeWidth={5}
               lineCap="round"
@@ -208,7 +248,7 @@ export default function MapViewComponent({
             />
             {/* Shimmer effect polyline */}
             <Polyline
-              coordinates={coordinates}
+              coordinates={smoothedCoordinates}
               strokeColor="rgba(255, 255, 255, 0.4)"
               strokeWidth={2}
               lineCap="round"
@@ -221,6 +261,9 @@ export default function MapViewComponent({
         {markers.map((marker, index) => {
           const isStart = index === 0;
           const isEnd = index === markers.length - 1;
+
+          // Hide start marker, only show end marker
+          if (isStart) return null;
 
           return (
             <Marker
@@ -288,7 +331,7 @@ export default function MapViewComponent({
               anchor={{ x: 0.5, y: 0.5 }}
               tracksViewChanges={false}
             >
-            <ModernMarker type="poi" scale={1.1} />
+            <ModernMarker type="poi" scale={0.9} />
             <Callout tooltip>
               <View style={calloutStyles.modernContainer}>
                 <View style={calloutStyles.modernPOIHeader}>
@@ -413,11 +456,11 @@ const modernMarkerStyles = StyleSheet.create({
     borderRadius: 50,
     justifyContent: 'center',
     alignItems: 'center',
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.2,
-    shadowRadius: 8,
-    elevation: 8,
+  },
+  outerRing: {
+    borderRadius: 50,
+    borderWidth: 1.5,
+    backgroundColor: 'transparent',
   },
   pulse: {
     position: 'absolute',

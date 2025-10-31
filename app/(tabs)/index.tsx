@@ -37,6 +37,13 @@ export default function ExploreScreen() {
     requestLocationPermission();
   }, []);
 
+  const handleReset = () => {
+    setDetourRoute(null);
+    setAvailablePOITypes({});
+    setLastSearchInputs(null);
+    setLastInputs(null);
+  };
+
   const requestLocationPermission = async () => {
     try {
       const { status } = await Location.requestForegroundPermissionsAsync();
@@ -207,10 +214,7 @@ export default function ExploreScreen() {
       {
         id: 'reset',
         icon: 'refresh',
-        onPress: () => {
-          setDetourRoute(null);
-          setAvailablePOITypes({});
-        },
+        onPress: handleReset,
         bgColor: theme.colors.accentLight,
         color: theme.colors.accent,
       },
@@ -226,6 +230,7 @@ export default function ExploreScreen() {
         markers={detourRoute?.markers}
         pois={detourRoute?.pois}
         initialRegion={initialRegion}
+        centerOffset={{x:0, y:.6}}
       />
 
       {/* Floating Search Bar */}
@@ -234,6 +239,7 @@ export default function ExploreScreen() {
           onFindDetour={handleFindDetour}
           onSearchPOIs={handleSearchPOIs}
           onTransportModeChange={handleTransportModeChange}
+          onReset={handleReset}
           isLoading={isLoading}
           currentLocation={currentLocation}
           detourRoute={detourRoute}

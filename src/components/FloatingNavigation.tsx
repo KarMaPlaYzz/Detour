@@ -1,5 +1,6 @@
 import { theme } from '@/styles/theme';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
+import BlurView from 'expo-blur/build/BlurView';
 import { usePathname, useRouter } from 'expo-router';
 import React from 'react';
 import {
@@ -83,82 +84,99 @@ export const FloatingNavigation: React.FC<FloatingNavigationProps> = ({
   });
 
   return (
-    <View style={styles.container}>
-      {/* Dynamic Actions Section */}
-      <Animated.View
-        style={[
-          styles.dynamicSection,
-          {
-            width: dynamicWidth,
-            opacity: opacityAnim,
-          },
-        ]}
-      >
-        {dynamicActions.map((action) => (
-          <TouchableOpacity
-            key={action.id}
-            style={[
-              styles.fab,
-              {
-                backgroundColor: action.bgColor || theme.colors.accentLight,
-              },
-            ]}
-            onPress={action.onPress}
-            activeOpacity={0.7}
-          >
-            <MaterialCommunityIcons
-              name={action.icon as any}
-              size={28}
-              color={action.color || theme.colors.accent}
-            />
-          </TouchableOpacity>
-        ))}
-      </Animated.View>
-
-      {/* Divider when dynamic actions exist */}
-      {dynamicActions.length > 0 && (
-        <View style={styles.divider} />
-      )}
-
-      {/* Core Navigation (always visible) */}
-      <View style={styles.coreSection}>
-        {coreButtons.map((button) => {
-          const isSelected =
-            (button.id === 'explore' && isExplore) ||
-            (button.id === 'my-detours' && isMyDetours);
-
-          return (
+    <BlurView intensity={15} tint="light" style={[styles.blurContainer, { bottom: bottomOffset }]}>
+      <View style={styles.contentContainer}>
+        {/* Dynamic Actions Section */}
+        <Animated.View
+          style={[
+            styles.dynamicSection,
+            {
+              width: dynamicWidth,
+              opacity: opacityAnim,
+            },
+          ]}
+        >
+          {dynamicActions.map((action) => (
             <TouchableOpacity
-              key={button.id}
-              style={[styles.fab, isSelected && styles.fabActive]}
-              onPress={() => router.push(button.route as any)}
+              key={action.id}
+              style={[
+                styles.fab,
+                {
+                  backgroundColor: action.bgColor || theme.colors.accentLight,
+                },
+              ]}
+              onPress={action.onPress}
               activeOpacity={0.7}
             >
-              <IconSymbol
+              <MaterialCommunityIcons
+                name={action.icon as any}
                 size={28}
-                name={
-                  (isSelected
-                    ? button.selectedIcon
-                    : button.unselectedIcon) as any
-                }
-                color={
-                  isSelected
-                    ? theme.colors.accent
-                    : theme.colors.textSecondary
-                }
+                color={action.color || theme.colors.accent}
               />
             </TouchableOpacity>
-          );
-        })}
+          ))}
+        </Animated.View>
+
+        {/* Divider when dynamic actions exist */}
+        {dynamicActions.length > 0 && (
+          <View style={styles.divider} />
+        )}
+
+        {/* Core Navigation (always visible) */}
+        <View style={styles.coreSection}>
+          {coreButtons.map((button) => {
+            const isSelected =
+              (button.id === 'explore' && isExplore) ||
+              (button.id === 'my-detours' && isMyDetours);
+
+            return (
+              <TouchableOpacity
+                key={button.id}
+                style={[styles.fab, isSelected && styles.fabActive]}
+                onPress={() => router.push(button.route as any)}
+                activeOpacity={0.7}
+              >
+                <IconSymbol
+                  size={28}
+                  name={
+                    (isSelected
+                      ? button.selectedIcon
+                      : button.unselectedIcon) as any
+                  }
+                  color={
+                    isSelected
+                      ? theme.colors.accent
+                      : theme.colors.textSecondary
+                  }
+                />
+              </TouchableOpacity>
+            );
+          })}
+        </View>
       </View>
-    </View>
+    </BlurView>
   );
 };const styles = StyleSheet.create({
+  blurContainer: {
+    position: 'absolute',
+    bottom: 20,
+    right: 16,
+    borderRadius: theme.borderRadius.full,
+    overflow: 'hidden',
+    borderWidth: 1,
+    borderColor: theme.colors.cardBorder,
+    ...theme.shadows.lg,
+  },
+  contentContainer: {
+    flexDirection: 'row',
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    alignItems: 'center',
+  },
   container: {
     position: 'absolute',
     bottom: 20,
     right: 16,
-    backgroundColor: theme.colors.card,
     borderRadius: theme.borderRadius.full,
     paddingHorizontal: 12,
     paddingVertical: 8,
