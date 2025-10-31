@@ -4,6 +4,47 @@ import React from 'react';
 import { Keyboard, Pressable, StyleSheet, Text, View } from 'react-native';
 import MapView, { Callout, Marker, Polyline, PROVIDER_GOOGLE } from 'react-native-maps';
 
+// Helper function to format POI type
+function formatPoiType(type: string): string {
+  const typeMap: { [key: string]: string } = {
+    'cafe': 'Café',
+    'restaurant': 'Restaurant',
+    'bar': 'Bar',
+    'museum': 'Museum',
+    'art_gallery': 'Art Gallery',
+    'park': 'Park',
+    'landmark': 'Landmark',
+    'tourist_attraction': 'Tourist Attraction',
+    'street_art': 'Street Art',
+    'monument': 'Monument',
+    'church': 'Church',
+    'temple': 'Temple',
+    'aquarium': 'Aquarium',
+    'amusement_park': 'Amusement Park',
+    'zoo': 'Zoo',
+  };
+  
+  return typeMap[type] || type.split('_').map(word => word.charAt(0).toUpperCase() + word.slice(1)).join(' ');
+}
+
+// Helper function to get today's hours
+function getTodayHours(weekdayText?: string[]): string | null {
+  if (!weekdayText || weekdayText.length === 0) return null;
+  
+  const days = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
+  const today = new Date();
+  const todayName = days[today.getDay()];
+  
+  // Find today's entry in weekdayText
+  const todayEntry = weekdayText.find(text => text.startsWith(todayName));
+  
+  if (!todayEntry) return null;
+  
+  // Extract just the time part (after the colon)
+  const timePart = todayEntry.split(': ')[1];
+  return timePart || null;
+}
+
 interface MapViewComponentProps {
   coordinates?: Location[];
   markers?: MarkerType[];
@@ -51,7 +92,7 @@ const ModernMarker = ({
           bgColor: '#00D084',
           iconColor: '#FFFFFF',
           icon: 'star-circle',
-          size: 32 * scale,
+          size: 48 * scale,
         };
       default:
         return {
@@ -225,19 +266,29 @@ export default function MapViewComponent({
         })}
 
         {/* Render POI markers with modern design */}
-        {pois.map((poi, index) => (
-          <Marker
-            key={`poi-marker-${index}`}
-            coordinate={{
-              latitude: poi.location.latitude,
-              longitude: poi.location.longitude,
-            }}
-            title={poi.name}
-            description={poi.vicinity || poi.formatted_address || 'Point of Interest'}
-            anchor={{ x: 0.5, y: 0.5 }}
-            tracksViewChanges={false}
-          >
-            <ModernMarker type="poi" scale={0.95} />
+        {pois.map((poi, index) => {
+          // Debug log
+          if (index === 0) {
+            console.log('POI Data received in MapViewComponent:', {
+              name: poi.name,
+              hasOpeningHours: !!poi.opening_hours,
+              hasOpeningHoursWeekday: !!poi.opening_hours?.weekdayText,
+              weekdayText: poi.opening_hours?.weekdayText,
+            });
+          }
+          return (
+            <Marker
+              key={`poi-marker-${index}`}
+              coordinate={{
+                latitude: poi.location.latitude,
+                longitude: poi.location.longitude,
+              }}
+              title={poi.name}
+              description={poi.vicinity || poi.formatted_address || 'Point of Interest'}
+              anchor={{ x: 0.5, y: 0.5 }}
+              tracksViewChanges={false}
+            >
+            <ModernMarker type="poi" scale={1.1} />
             <Callout tooltip>
               <View style={calloutStyles.modernContainer}>
                 <View style={calloutStyles.modernPOIHeader}>
@@ -251,20 +302,31 @@ export default function MapViewComponent({
                     style={calloutStyles.modernTitle}
                     numberOfLines={1}
                   >
-                    Point of Interest
+                    {poi.types && poi.types[0] ? formatPoiType(poi.types[0]) : 'Point of Interest'}
                   </Text>
                 </View>
+                
+                {/* Place Name */}
                 <Text
                   style={calloutStyles.modernDescription}
                   numberOfLines={2}
                 >
                   {poi.name}
                 </Text>
+
+                {/* Address */}
+                {poi.formattedAddress && (
+                  <Text style={calloutStyles.addressText} numberOfLines={2}>
+                    📍 {poi.formattedAddress}
+                  </Text>
+                )}
+
+                {/* Rating & Reviews */}
                 {poi.rating && (
                   <View style={calloutStyles.ratingRow}>
                     <MaterialCommunityIcons
                       name="star"
-                      size={12}
+                      size={14}
                       color="#FFA500"
                     />
                     <Text style={calloutStyles.modernRating}>
@@ -272,11 +334,29 @@ export default function MapViewComponent({
                     </Text>
                     {poi.user_ratings_total && (
                       <Text style={calloutStyles.ratingCount}>
-                        ({poi.user_ratings_total})
+                        ({poi.user_ratings_total} reviews)
                       </Text>
                     )}
                   </View>
                 )}
+
+                {/* Distance to Route */}
+                {poi.distanceToRoute !== undefined && (
+                  <View style={calloutStyles.distanceRow}>
+                    <MaterialCommunityIcons
+                      name="road"
+                      size={14}
+                      color="#0066FF"
+                    />
+                    <Text style={calloutStyles.distanceText}>
+                      {poi.distanceToRoute < 1000
+                        ? `${Math.round(poi.distanceToRoute)}m from route`
+                        : `${(poi.distanceToRoute / 1000).toFixed(1)}km from route`}
+                    </Text>
+                  </View>
+                )}
+
+                {/* Status - Open/Closed with Today's Hours */}
                 {poi.business_status && (
                   <View style={calloutStyles.statusRow}>
                     <View
@@ -290,17 +370,25 @@ export default function MapViewComponent({
                         },
                       ]}
                     />
-                    <Text style={calloutStyles.statusText}>
-                      {poi.business_status === 'OPERATIONAL'
-                        ? 'Open'
-                        : 'Closed'}
-                    </Text>
+                    <View style={{ flex: 1 }}>
+                      <Text style={calloutStyles.statusText}>
+                        {poi.business_status === 'OPERATIONAL'
+                          ? 'Open'
+                          : 'Closed'}
+                      </Text>
+                      {poi.business_status === 'OPERATIONAL' && (poi.openingHours?.weekdayText || poi.opening_hours?.weekdayText) && (
+                        <Text style={calloutStyles.todayHoursText}>
+                          {getTodayHours(poi.openingHours?.weekdayText || poi.opening_hours?.weekdayText)}
+                        </Text>
+                      )}
+                    </View>
                   </View>
                 )}
               </View>
             </Callout>
-          </Marker>
-        ))}
+            </Marker>
+          );
+        })}
       </MapView>
       </Pressable>
     </View>
@@ -344,8 +432,9 @@ const calloutStyles = StyleSheet.create({
   modernContainer: {
     backgroundColor: '#FFFFFF',
     borderRadius: 12,
-    padding: 12,
-    maxWidth: 240,
+    padding: 16,
+    maxWidth: 300,
+    minWidth: 280,
     shadowColor: '#000',
     shadowOffset: { width: 0, height: 4 },
     shadowOpacity: 0.15,
@@ -355,75 +444,104 @@ const calloutStyles = StyleSheet.create({
   modernHeader: {
     flexDirection: 'row',
     alignItems: 'center',
-    marginBottom: 8,
+    marginBottom: 10,
     backgroundColor: '#0066FF',
-    paddingHorizontal: 8,
-    paddingVertical: 6,
+    paddingHorizontal: 12,
+    paddingVertical: 8,
     borderRadius: 8,
   },
   modernPOIHeader: {
     flexDirection: 'row',
     alignItems: 'center',
-    marginBottom: 8,
+    marginBottom: 10,
     backgroundColor: '#00D084',
-    paddingHorizontal: 8,
-    paddingVertical: 6,
+    paddingHorizontal: 12,
+    paddingVertical: 8,
     borderRadius: 8,
   },
   markerIcon: {
-    marginRight: 6,
+    marginRight: 8,
   },
   modernTitle: {
-    fontSize: 13,
+    fontSize: 15,
     fontWeight: '700',
     color: '#FFFFFF',
     flex: 1,
   },
   modernDescription: {
-    fontSize: 14,
+    fontSize: 16,
     fontWeight: '600',
     color: '#000000',
-    marginBottom: 8,
-    lineHeight: 20,
+    marginBottom: 10,
+    lineHeight: 22,
   },
   modernSubtext: {
-    fontSize: 12,
+    fontSize: 13,
     color: '#666666',
-    lineHeight: 18,
+    lineHeight: 20,
   },
   ratingRow: {
     flexDirection: 'row',
     alignItems: 'center',
-    marginTop: 6,
-    marginBottom: 4,
+    marginTop: 8,
+    marginBottom: 6,
   },
   modernRating: {
-    fontSize: 13,
+    fontSize: 14,
     fontWeight: '700',
     color: '#FFA500',
-    marginLeft: 4,
+    marginLeft: 6,
   },
   ratingCount: {
-    fontSize: 12,
+    fontSize: 13,
     color: '#888888',
-    marginLeft: 4,
+    marginLeft: 6,
   },
   statusRow: {
     flexDirection: 'row',
     alignItems: 'center',
-    marginTop: 6,
+    marginTop: 8,
   },
   statusDot: {
-    width: 8,
-    height: 8,
-    borderRadius: 4,
-    marginRight: 6,
+    width: 10,
+    height: 10,
+    borderRadius: 5,
+    marginRight: 8,
   },
   statusText: {
-    fontSize: 12,
+    fontSize: 13,
     fontWeight: '600',
     color: '#333333',
   },
+
+  todayHoursText: {
+    fontSize: 11,
+    color: '#666666',
+    marginTop: 2,
+    fontStyle: 'italic',
+  },
+  
+  addressText: {
+    fontSize: 12,
+    color: '#555555',
+    marginBottom: 8,
+    lineHeight: 16,
+  },
+
+  distanceRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginTop: 8,
+    marginBottom: 4,
+  },
+
+  distanceText: {
+    fontSize: 12,
+    fontWeight: '500',
+    color: '#0066FF',
+    marginLeft: 6,
+  },
+
   // Legacy styles for backward compatibility
   container: {
     backgroundColor: 'white',

@@ -8,6 +8,7 @@ const GOOGLE_MAPS_API_KEY = Constants.expoConfig?.extra?.GOOGLE_MAPS_API_KEY ||
 const DIRECTIONS_URL = 'https://maps.googleapis.com/maps/api/directions/json';
 const PLACES_URL = 'https://maps.googleapis.com/maps/api/place/nearbysearch/json';
 const GEOCODING_URL = 'https://maps.googleapis.com/maps/api/geocode/json';
+const PLACE_DETAILS_URL = 'https://maps.googleapis.com/maps/api/place/details/json';
 
 // Interest mapping to Google Places types and keywords
 const interestMapping: Record<Interest, InterestMapping> = {
@@ -183,7 +184,7 @@ export async function discoverPOITypes(
       'hostel', 'shopping_mall', 'book_store', 'clothing_store', 'library',
       'street_art', 'mural', 'graffiti', 'city_hall', 'courthouse',
       'airport', 'train_station', 'bus_station', 'subway_station', 'taxi_stand',
-      'gym', 'bank', 'post_office', 'pharmacy', 'hospital', 'doctor',
+      'gym', 'bank', 'post_office', 'pharmacy', 'hospital', 'doctor', 'supermarket'
     ]);
 
     // Exclude administrative/confusing types
@@ -710,23 +711,89 @@ async function findPOIAlongRoute(
     }
   }
   
+  // Fetch detailed information for top POIs to get opening hours and other details
+  const enhancedPOIs = await Promise.all(
+    uniquePOIs.slice(0, 10).map(async (poi) => {
+      if (poi.placeId) {
+        const details = await fetchPlaceDetails(poi.placeId);
+        if (details) {
+          console.log('Merging details for:', poi.name, {
+            hasOpeningHours: !!details.opening_hours,
+            hasFormattedAddress: !!details.formatted_address,
+          });
+          
+          // Convert opening_hours snake_case to camelCase for consistency
+          let openingHours = details.opening_hours || poi.opening_hours;
+          if (openingHours && openingHours.weekday_text) {
+            openingHours = {
+              ...openingHours,
+              weekdayText: openingHours.weekday_text,
+            };
+          }
+          
+          return {
+            ...poi,
+            opening_hours: openingHours,
+            openingHours: openingHours,
+            formattedAddress: details.formatted_address || poi.formattedAddress,
+            business_status: details.business_status || poi.business_status,
+            businessStatus: details.business_status || poi.businessStatus,
+            rating: details.rating || poi.rating,
+            user_ratings_total: details.user_ratings_total || poi.user_ratings_total,
+          };
+        }
+      }
+      return poi;
+    })
+  );
+  
   // Sort by distance to route and rating
-  uniquePOIs.sort((a, b) => {
+  enhancedPOIs.sort((a, b) => {
     const distDiff = a.distanceToRoute - b.distanceToRoute;
     if (distDiff !== 0) return distDiff;
     return (b.rating || 0) - (a.rating || 0);
   });
   
-  const bestPOI = uniquePOIs[0];
+  const bestPOI = enhancedPOIs[0];
   
   return {
     bestPOI: {
       ...bestPOI,
     },
-    allPOIs: uniquePOIs.map(p => ({
+    allPOIs: enhancedPOIs.map(p => ({
       ...p,
     })),
   };
+}
+
+/**
+ * Fetch detailed information for a place including opening hours
+ */
+async function fetchPlaceDetails(placeId: string): Promise<any> {
+  if (!GOOGLE_MAPS_API_KEY) {
+    return null;
+  }
+
+  try {
+    const url = `${PLACE_DETAILS_URL}?place_id=${placeId}&fields=opening_hours,formatted_address,business_status,rating,user_ratings_total,types,photos&key=${GOOGLE_MAPS_API_KEY}`;
+    const response = await fetch(url);
+    const data = await response.json();
+    
+    if (data.status === 'OK' && data.result) {
+      console.log('Place Details API Response:', {
+        placeId,
+        opening_hours: data.result.opening_hours,
+        formatted_address: data.result.formatted_address,
+      });
+      return data.result;
+    } else {
+      console.warn('Place Details API error:', data.status, data.error_message);
+    }
+  } catch (error) {
+    console.error('Error fetching place details:', error);
+  }
+  
+  return null;
 }
 
 /**

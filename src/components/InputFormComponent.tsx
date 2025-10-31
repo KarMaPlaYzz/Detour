@@ -1,5 +1,6 @@
 import { theme } from '@/styles/theme';
 import { Interest, Location } from '@/types/detour';
+import { BlurView } from 'expo-blur';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import {
   ActivityIndicator,
@@ -82,7 +83,7 @@ export default function InputFormComponent({
   const [hasRoute, setHasRoute] = useState(false);
   const [dynamicInterests, setDynamicInterests] = useState<string[]>([]);
   const [poiTypeMap, setPoiTypeMap] = useState<{ [key: string]: string }>({});
-  const [suggestions, setSuggestions] = useState<string[]>([]);
+  const [suggestions, setSuggestions] = useState<Array<{mainText: string, secondaryText: string, fullDescription: string}>>([]);
   const [activeSuggestionsField, setActiveSuggestionsField] = useState<'from' | 'to' | null>(null);
   const endInputRef = useRef<TextInput>(null);
   const startInputRef = useRef<TextInput>(null);
@@ -292,7 +293,35 @@ export default function InputFormComponent({
       const data = await response.json();
       
       if (data.predictions) {
-        setSuggestions(data.predictions.map((p: any) => p.description));
+        setSuggestions(data.predictions.map((p: any) => {
+          // Use structured formatting if available (most reliable)
+          if (p.structured_formatting?.main_text) {
+            return {
+              mainText: p.structured_formatting.main_text.trim(),
+              secondaryText: p.structured_formatting.secondary_text?.trim() || '',
+              fullDescription: p.description,
+            };
+          }
+          
+          // Fallback: manually parse description if no structured formatting
+          // Split by comma and separate primary from secondary location
+          const parts = p.description.split(',').map((part: string) => part.trim());
+          if (parts.length > 1) {
+            // First part is usually the place name, rest is location hierarchy
+            return {
+              mainText: parts[0],
+              secondaryText: parts.slice(1).join(', '),
+              fullDescription: p.description,
+            };
+          }
+          
+          // Single-part description (shouldn't happen often)
+          return {
+            mainText: p.description,
+            secondaryText: '',
+            fullDescription: p.description,
+          };
+        }));
       } else if (data.error_message) {
         console.error('API Error:', data.error_message);
       }
@@ -387,6 +416,8 @@ export default function InputFormComponent({
       >
         {/* Search Bar - Shows when no route */}
         {!hasRoute && (
+          <BlurView style={styles.suggestionsBlur} tint="light" intensity={80}>
+                
           <Animated.View
             style={{
               opacity: headerAnimRef.current.interpolate({
@@ -446,36 +477,40 @@ export default function InputFormComponent({
             {/* Suggestions Dropdown */}
             {suggestions.length > 0 && (
               <Animated.View style={{
-                opacity: suggestionsAnimRef.current,
-                maxHeight: suggestionsAnimRef.current.interpolate({
-                  inputRange: [0, 1],
-                  outputRange: [0, 500],
-                }),
-                transform: [{
-                  translateY: suggestionsAnimRef.current.interpolate({
+                  opacity: suggestionsAnimRef.current,
+                  maxHeight: suggestionsAnimRef.current.interpolate({
                     inputRange: [0, 1],
-                    outputRange: [-10, 0],
+                    outputRange: [0, 500],
                   }),
-                }],
-              }}>
-                <View style={styles.suggestionsContainer}>
-                  {suggestions.slice(0, 5).map((item, index) => (
-                    <TouchableOpacity
-                      key={index}
-                      style={styles.suggestionItem}
-                      onPress={() => handleSuggestionSelect(item)}
-                    >
-                      <IconSymbol name="location" size={16} color={theme.colors.textTertiary} />
-                      <View style={styles.suggestionContent}>
-                        <Text style={styles.suggestionText} numberOfLines={1}>{item}</Text>
-                      </View>
-                      <IconSymbol name="arrow.up.left" size={14} color={theme.colors.textTertiary} />
-                    </TouchableOpacity>
-                  ))}
-                </View>
+                  transform: [{
+                    translateY: suggestionsAnimRef.current.interpolate({
+                      inputRange: [0, 1],
+                      outputRange: [-10, 0],
+                    }),
+                  }],
+                }}>
+                    <View style={styles.suggestionsContainer}>
+                      {suggestions.slice(0, 5).map((item, index) => (
+                        <TouchableOpacity
+                          key={index}
+                          style={styles.suggestionItem}
+                          onPress={() => handleSuggestionSelect(item.fullDescription)}
+                        >
+                          <IconSymbol name="location" size={16} color={theme.colors.textTertiary} />
+                          <View style={styles.suggestionContent}>
+                            <Text style={styles.suggestionText} numberOfLines={1}>{item.mainText}</Text>
+                            {item.secondaryText && (
+                              <Text style={styles.suggestionSecondaryText} numberOfLines={1}>{item.secondaryText}</Text>
+                            )}
+                          </View>
+                          <IconSymbol name="arrow.up.left" size={14} color={theme.colors.textTertiary} />
+                        </TouchableOpacity>
+                      ))}
+                    </View>
               </Animated.View>
             )}
           </Animated.View>
+                </BlurView>
         )}
 
         {/* Form Content - Shows when route found */}
@@ -501,7 +536,7 @@ export default function InputFormComponent({
                 {
                   maxHeight: collapseAnimRef.current.interpolate({
                     inputRange: [0, 1],
-                    outputRange: [120, 400],
+                    outputRange: [135, 400],
                   }),
                 }
               ]}
@@ -620,11 +655,14 @@ export default function InputFormComponent({
                     <TouchableOpacity
                       key={index}
                       style={styles.suggestionItem}
-                      onPress={() => handleSuggestionSelect(item)}
+                      onPress={() => handleSuggestionSelect(item.fullDescription)}
                     >
                       <IconSymbol name="location" size={16} color={theme.colors.textTertiary} />
                       <View style={styles.suggestionContent}>
-                        <Text style={styles.suggestionText} numberOfLines={1}>{item}</Text>
+                        <Text style={styles.suggestionText} numberOfLines={1}>{item.mainText}</Text>
+                        {item.secondaryText && (
+                          <Text style={styles.suggestionSecondaryText} numberOfLines={1}>{item.secondaryText}</Text>
+                        )}
                       </View>
                       <IconSymbol name="arrow.up.left" size={14} color={theme.colors.textTertiary} />
                     </TouchableOpacity>
@@ -908,13 +946,17 @@ const styles = StyleSheet.create({
   },
 
   suggestionsContainer: {
-    backgroundColor: theme.colors.card,
     borderRadius: theme.borderRadius.md,
     marginHorizontal: theme.spacing.sm,
-    borderWidth: 1,
-    borderColor: theme.colors.cardBorder,
+    borderWidth: 0,
+    borderColor: 'transparent',
     overflow: 'hidden',
-    ...theme.shadows.md,
+  },
+
+  suggestionsBlur: {
+    borderRadius: theme.borderRadius.md,
+    overflow: 'hidden',
+    marginHorizontal: theme.spacing.sm,
   },
 
   suggestionItem: {
@@ -935,6 +977,13 @@ const styles = StyleSheet.create({
     ...theme.typography.body,
     color: theme.colors.textPrimary,
     fontSize: 15,
+  },
+
+  suggestionSecondaryText: {
+    ...theme.typography.caption,
+    color: theme.colors.textTertiary,
+    fontSize: 12,
+    marginTop: 2,
   },
 
   /* STATE 2: Route Found */
@@ -966,6 +1015,14 @@ const styles = StyleSheet.create({
     ...theme.shadows.sm,
     flexDirection: 'row',
     alignItems: 'flex-start',
+  },
+
+  routeSummaryBlur: {
+    borderRadius: theme.borderRadius.lg,
+    overflow: 'hidden',
+    marginHorizontal: theme.spacing.md,
+    marginBottom: theme.spacing.sm,
+    backgroundColor: 'rgba(30, 30, 30, 0.5)',
   },
 
   summaryContent: {
