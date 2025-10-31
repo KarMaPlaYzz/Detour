@@ -230,7 +230,7 @@ export default function ExploreScreen() {
         markers={detourRoute?.markers}
         pois={detourRoute?.pois}
         initialRegion={initialRegion}
-        centerOffset={{x:0, y:.6}}
+        centerOffset={{x:0, y:0.6}}
       />
 
       {/* Floating Search Bar */}

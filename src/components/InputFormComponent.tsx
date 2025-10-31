@@ -249,17 +249,22 @@ export default function InputFormComponent({
     }
   }, [isExpanded, hasRoute]);
 
+  // Handle explicit reset from parent
+  useEffect(() => {
+    if (onReset) {
+      // This effect doesn't depend on detourRoute, just ensures we have the callback
+      // The actual reset logic is handled by the hasRoute effect below
+    }
+  }, [onReset]);
+
   // Handle reset from parent - only clear when transitioning from route found to no route
   useEffect(() => {
     if (prevHasRouteRef.current && !hasRoute) {
-      // We had a route but now we don't - check if this is a real reset or just a route update
-      if (!isUpdatingRouteRef.current) {
-        // User clicked reset button, clear the inputs
-        setEndInput('');
-        setStartInput('');
-        setSuggestions([]);
-        setActiveSuggestionsField(null);
-      }
+      // We had a route but now we don't - clear the inputs
+      setEndInput('');
+      setStartInput('');
+      setSuggestions([]);
+      setActiveSuggestionsField(null);
       isUpdatingRouteRef.current = false;
     }
     prevHasRouteRef.current = hasRoute;

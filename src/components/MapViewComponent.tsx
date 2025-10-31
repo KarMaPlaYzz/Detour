@@ -1,4 +1,3 @@
-import { smoothSharpCorners } from '@/services/PolylineSmoothing';
 import { Location, Marker as MarkerType } from '@/types/detour';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import React from 'react';
@@ -68,8 +67,8 @@ interface MapViewComponentProps {
   };
 }
 
-// Modern custom marker component
-const ModernMarker = ({
+// Modern custom marker component - memoized to prevent unnecessary re-renders
+const ModernMarker = React.memo(({
   type,
   scale = 1,
 }: {
@@ -92,7 +91,7 @@ const ModernMarker = ({
           borderColor: '#0077CC',
           iconColor: '#FFFFFF',
           icon: 'circle',
-          size: 28 * scale,
+          size: 18 * scale,
         };
       case 'poi':
         return {
@@ -103,8 +102,8 @@ const ModernMarker = ({
         };
       default:
         return {
-          bgColor: '#1F51BA',
-          borderColor: '#0D35A8',
+          bgColor: '#0099FF',
+          borderColor: '#0077CC',
           iconColor: '#FFFFFF',
           icon: 'map-marker',
           size: 36 * scale,
@@ -142,7 +141,7 @@ const ModernMarker = ({
       </View>
     </View>
   );
-};
+});
 
 export default function MapViewComponent({
   coordinates = [],
@@ -159,7 +158,6 @@ export default function MapViewComponent({
   centerOffset = { x: 0, y: 0 },
 }: MapViewComponentProps) {
   const mapRef = React.useRef<MapView>(null);
-  const [smoothedCoordinates, setSmoothedCoordinates] = React.useState<Location[]>([]);
   const [offsetInitialRegion, setOffsetInitialRegion] = React.useState(initialRegion);
 
   // Apply center offset to the initial region
@@ -179,12 +177,64 @@ export default function MapViewComponent({
     }
   }, [initialRegion, centerOffset]);
 
-  // Smooth only sharp corners when coordinates change
-  React.useEffect(() => {
-    if (coordinates.length > 0) {
-      const smoothed = smoothSharpCorners(coordinates, 0, 5); // More interpolation points for smoother curves
-      setSmoothedCoordinates(smoothed);
+  // Add corner points to sharpen the route visualization
+  const smoothedCoordinates = React.useMemo(() => {
+    if (!coordinates || coordinates.length < 3) {
+      return coordinates || [];
     }
+
+    // Calculate angle between three consecutive points
+    const getAngle = (p1: Location, p2: Location, p3: Location): number => {
+      const dx1 = p2.longitude - p1.longitude;
+      const dy1 = p2.latitude - p1.latitude;
+      const dx2 = p3.longitude - p2.longitude;
+      const dy2 = p3.latitude - p2.latitude;
+      
+      const dot = dx1 * dx2 + dy1 * dy2;
+      const cross = dx1 * dy2 - dy1 * dx2;
+      return Math.abs(Math.atan2(cross, dot)) * (180 / Math.PI);
+    };
+
+    const result: Location[] = [coordinates[0]];
+    let addedCount = 0;
+
+    // Process each point and check for sharp corners
+    for (let i = 1; i < coordinates.length - 1; i++) {
+      const angle = getAngle(coordinates[i - 1], coordinates[i], coordinates[i + 1]);
+      
+      // If corner is sharp (angle < 100 degrees), add a point just before and after to create a visible corner
+      if (angle < 100) {
+        const prev = coordinates[i - 1];
+        const curr = coordinates[i];
+        const next = coordinates[i + 1];
+        
+        // Add a point very close to curr from the prev direction (creates the corner visual)
+        result.push({
+          latitude: curr.latitude - (curr.latitude - prev.latitude) * 0.05,
+          longitude: curr.longitude - (curr.longitude - prev.longitude) * 0.05,
+        });
+        addedCount++;
+        
+        // Add the corner point itself
+        result.push(curr);
+        
+        // Add a point very close to curr in the next direction (completes the corner visual)
+        result.push({
+          latitude: curr.latitude + (next.latitude - curr.latitude) * 0.05,
+          longitude: curr.longitude + (next.longitude - curr.longitude) * 0.05,
+        });
+        addedCount++;
+      } else {
+        // For gentle curves, just add the point as-is
+        result.push(coordinates[i]);
+      }
+    }
+
+    // Add the final coordinate
+    result.push(coordinates[coordinates.length - 1]);
+
+    console.log('🗺️ Original', coordinates.length, 'waypoints → Enhanced', result.length, 'points (+', addedCount, 'corner points)');
+    return result;
   }, [coordinates]);
 
   // Update map region when initialRegion changes (e.g., when current location is obtained)
@@ -194,7 +244,7 @@ export default function MapViewComponent({
     }
   }, [offsetInitialRegion]);
 
-  // Fit map to show all markers when coordinates change
+  // Fit map to show all markers when coordinates change, or reset to initial region when cleared
   React.useEffect(() => {
     if (coordinates.length > 0 && mapRef.current) {
       setTimeout(() => {
@@ -202,9 +252,48 @@ export default function MapViewComponent({
           edgePadding: { top: 100, right: 50, bottom: 100, left: 50 },
           animated: true,
         });
+        
+        // Apply center offset to the fitted region
+        if (centerOffset.x !== 0 || centerOffset.y !== 0) {
+          // Calculate the bounding box
+          let minLat = coordinates[0].latitude;
+          let maxLat = coordinates[0].latitude;
+          let minLng = coordinates[0].longitude;
+          let maxLng = coordinates[0].longitude;
+          
+          coordinates.forEach(coord => {
+            minLat = Math.min(minLat, coord.latitude);
+            maxLat = Math.max(maxLat, coord.latitude);
+            minLng = Math.min(minLng, coord.longitude);
+            maxLng = Math.max(maxLng, coord.longitude);
+          });
+          
+          const centerLat = (minLat + maxLat) / 2;
+          const centerLng = (minLng + maxLng) / 2;
+          const latDelta = maxLat - minLat;
+          const lngDelta = maxLng - minLng;
+          
+          // Apply offset
+          const offsetLat = (centerOffset.y * latDelta) / 2;
+          const offsetLng = (centerOffset.x * lngDelta) / 2;
+          
+          const offsetRegion = {
+            latitude: centerLat + offsetLat,
+            longitude: centerLng + offsetLng,
+            latitudeDelta: latDelta * 1.3,
+            longitudeDelta: lngDelta * 1.3,
+          };
+          
+          setTimeout(() => {
+            mapRef.current?.animateToRegion(offsetRegion, 300);
+          }, 600);
+        }
       }, 100);
+    } else if (coordinates.length === 0 && mapRef.current && offsetInitialRegion) {
+      // Reset to initial region when coordinates are cleared
+      mapRef.current.animateToRegion(offsetInitialRegion, 500);
     }
-  }, [coordinates]);
+  }, [coordinates, offsetInitialRegion, centerOffset]);
 
   return (
     <View style={styles.container}>
@@ -217,45 +306,43 @@ export default function MapViewComponent({
           style={styles.map}
           provider={PROVIDER_GOOGLE}
           initialRegion={offsetInitialRegion}
-          /* customMapStyle={modernMapStyle}*/
+          /*customMapStyle={modernMapStyle}*/
           onMapReady={onMapReady}
           showsUserLocation={showUserLocation}
           showsMyLocationButton={false}
           showsPointsOfInterest={true}
+          showsTraffic={false}
+          showsIndoors={false}
           zoomEnabled={true}
           scrollEnabled={true}
           pitchEnabled={true}
           rotateEnabled={true}
         >
-          {/* Render polyline with modern gradient effect */}
-          {smoothedCoordinates.length > 0 && (
-          <>
-            {/* Background polyline for depth */}
-            <Polyline
-              coordinates={smoothedCoordinates}
-              strokeColor="rgba(0, 102, 255, 0.15)"
-              strokeWidth={12}
-              lineCap="round"
-              lineJoin="round"
-            />
-            {/* Main polyline */}
-            <Polyline
-              coordinates={smoothedCoordinates}
-              strokeColor="#0066FF"
-              strokeWidth={5}
-              lineCap="round"
-              lineJoin="round"
-            />
-            {/* Shimmer effect polyline */}
-            <Polyline
-              coordinates={smoothedCoordinates}
-              strokeColor="rgba(255, 255, 255, 0.4)"
-              strokeWidth={2}
-              lineCap="round"
-              lineJoin="round"
-            />
-          </>
-        )}
+          {/* Render route polyline with modern design */}
+          {smoothedCoordinates.length > 1 && (
+            <>
+              {/* Secondary glow layer */}
+              <Polyline
+                coordinates={smoothedCoordinates}
+                strokeColors={["#0077CC", "#0077CC"]}
+                strokeWidth={9}
+                lineCap="round"
+                lineJoin="round"
+                geodesic={false}
+                tappable={false}
+              />
+              {/* Main vibrant line */}
+              <Polyline
+                coordinates={smoothedCoordinates}
+                strokeColors={["#0099FF", "#0099FF"]}
+                strokeWidth={5}
+                lineCap="round"
+                lineJoin="round"
+                geodesic={false}
+                tappable={false}
+              />
+            </>
+          )}
 
         {/* Render route markers with modern design */}
         {markers.map((marker, index) => {
@@ -310,15 +397,6 @@ export default function MapViewComponent({
 
         {/* Render POI markers with modern design */}
         {pois.map((poi, index) => {
-          // Debug log
-          if (index === 0) {
-            console.log('POI Data received in MapViewComponent:', {
-              name: poi.name,
-              hasOpeningHours: !!poi.opening_hours,
-              hasOpeningHoursWeekday: !!poi.opening_hours?.weekdayText,
-              weekdayText: poi.opening_hours?.weekdayText,
-            });
-          }
           return (
             <Marker
               key={`poi-marker-${index}`}
