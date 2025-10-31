@@ -205,13 +205,6 @@ export default function ExploreScreen() {
 
     return [
       {
-        id: 'save',
-        icon: 'content-save',
-        onPress: () => setSaveModalVisible(true),
-        bgColor: theme.colors.accent,
-        color: theme.colors.card,
-      },
-      {
         id: 'reset',
         icon: 'refresh',
         onPress: handleReset,
