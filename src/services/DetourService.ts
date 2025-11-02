@@ -143,7 +143,7 @@ export async function getBasicRoute({
     const coordinates = decode(directRoute.overview_polyline.points);
     
     // Fetch durations for all transportation modes
-    const durations = await fetchDurationsForAllModes(startCoords, endCoords);
+    const { durations, durationsWithTraffic } = await fetchDurationsForAllModes(startCoords, endCoords);
     
     return {
       coordinates,
@@ -163,6 +163,7 @@ export async function getBasicRoute({
         },
       ],
       durations,
+      durationsWithTraffic,
     };
   } catch (error) {
     if (error instanceof Error) {
@@ -583,32 +584,52 @@ async function fetchDirectRoute(
 }
 
 /**
- * Fetch durations for all transportation modes
+ * Fetch durations for all transportation modes, including traffic for driving
  */
 async function fetchDurationsForAllModes(
   start: Location | string,
   end: Location | string
-): Promise<{ car?: number; walk?: number; bike?: number; transit?: number }> {
+): Promise<{ 
+  durations: { car?: number; walk?: number; bike?: number; transit?: number };
+  durationsWithTraffic: { car?: number; walk?: number; bike?: number; transit?: number };
+}> {
   const origin = typeof start === 'string' ? encodeURIComponent(start) : `${start.latitude},${start.longitude}`;
   const destination = typeof end === 'string' ? encodeURIComponent(end) : `${end.latitude},${end.longitude}`;
   
   const modes = ['driving', 'walking', 'bicycling', 'transit'];
   const modeMap = { driving: 'car', walking: 'walk', bicycling: 'bike', transit: 'transit' };
   const durations: Record<string, number> = {};
+  const durationsWithTraffic: Record<string, number> = {};
   
   // Fetch all modes in parallel
   const promises = modes.map(async (mode) => {
     try {
-      const url = `${DIRECTIONS_URL}?origin=${origin}&destination=${destination}&mode=${mode}&key=${GOOGLE_MAPS_API_KEY}`;
+      // For driving mode, include departure_time=now to get traffic data
+      let url = `${DIRECTIONS_URL}?origin=${origin}&destination=${destination}&mode=${mode}&key=${GOOGLE_MAPS_API_KEY}`;
+      if (mode === 'driving') {
+        url += '&departure_time=now';
+      }
+      
       const response = await fetch(url);
       const data = await response.json();
       
       if (data.status === 'OK' && data.routes && data.routes.length > 0) {
-        const duration = data.routes[0].legs?.[0]?.duration?.value;
+        const leg = data.routes[0].legs?.[0];
+        const modeKey = modeMap[mode as keyof typeof modeMap];
+        
+        // Regular duration
+        const duration = leg?.duration?.value;
         if (duration !== undefined && duration > 0) {
-          durations[modeMap[mode as keyof typeof modeMap]] = duration;
-        } else {
-          console.warn(`No valid duration for ${mode}:`, data.routes[0].legs?.[0]?.duration);
+          durations[modeKey] = duration;
+        }
+        
+        // Duration with traffic (only available for driving)
+        const durationWithTraffic = leg?.duration_in_traffic?.value;
+        if (durationWithTraffic !== undefined && durationWithTraffic > 0) {
+          durationsWithTraffic[modeKey] = durationWithTraffic;
+        } else if (duration) {
+          // Fallback to regular duration if traffic data not available
+          durationsWithTraffic[modeKey] = duration;
         }
       } else {
         console.warn(`API status not OK for ${mode}:`, data.status, data.error_message);
@@ -620,7 +641,8 @@ async function fetchDurationsForAllModes(
   
   await Promise.all(promises);
   console.log('Fetched durations:', durations);
-  return durations;
+  console.log('Fetched durations with traffic:', durationsWithTraffic);
+  return { durations, durationsWithTraffic };
 }
 
 /**
@@ -658,7 +680,7 @@ async function findPOIAlongRoute(
   // Try each sample point and collect POIs
   for (const searchPoint of samplePoints) {
     // For close routes, search in smaller radius. For longer routes, use more reasonable radius
-    const searchRadius = Math.min(radius, 800); // Much smaller search radius - 800m max
+    const searchRadius = Math.min(radius, 500); // Much smaller search radius - 500m max
     
     let url = `${PLACES_URL}?location=${searchPoint.latitude},${searchPoint.longitude}&radius=${searchRadius}&key=${GOOGLE_MAPS_API_KEY}`;
     
@@ -685,8 +707,8 @@ async function findPOIAlongRoute(
           // Find the closest point on the route to this POI
           const distanceToRoute = getClosestDistanceToRoute(poiLocation, routeCoordinates);
           
-          // Only keep POIs that are VERY close to the route (within 300m)
-          if (distanceToRoute <= 300) {
+          // Only keep POIs that are VERY close to the route (within 150m)
+          if (distanceToRoute <= 150) {
             // Dynamically capture all available fields from the API response
             const poiData: {
               [key: string]: any;
@@ -918,6 +940,98 @@ async function fetchDetourRoute(
   }
   
   return data.routes[0];
+}
+
+/**
+ * Generate a detour route with a specific POI as waypoint
+ * Shows the user what the route looks like if they stop at this POI
+ * Always uses walking mode for detours to encourage exploration
+ */
+export async function generateDetourWithPOI({
+  start,
+  end,
+  poi,
+  mode = 'walking',
+}: {
+  start: Location | string;
+  end: Location | string;
+  poi: { location: Location; name: string };
+  mode?: 'driving' | 'walking' | 'bicycling' | 'transit';
+}): Promise<{
+  coordinates: Location[];
+  encodedPolyline: string;
+  markers: any[];
+  extraDistance: number;
+  extraTime: number;
+  directDistance: number;
+  directTime: number;
+}> {
+  if (!GOOGLE_MAPS_API_KEY) {
+    throw new Error('Google Maps API key is not configured');
+  }
+
+  try {
+    // Get the direct route (no detour)
+    const directRoute = await fetchDirectRoute(start, end, mode);
+    const directDistance = directRoute.legs[0].distance.value;
+    const directTime = directRoute.legs[0].duration.value;
+
+    // Get the detour route (through POI)
+    const detourRoute = await fetchDetourRoute(start, end, poi.location);
+    const detourDistance = detourRoute.legs.reduce(
+      (sum: number, leg: any) => sum + leg.distance.value,
+      0
+    );
+    const detourTime = detourRoute.legs.reduce(
+      (sum: number, leg: any) => sum + leg.duration.value,
+      0
+    );
+
+    // Decode the detour polyline
+    const coordinates = decode(detourRoute.overview_polyline.points);
+
+    // Extract markers
+    const startCoords = await geocodeLocation(start);
+    const endCoords = await geocodeLocation(end);
+
+    const markers = [
+      {
+        latitude:
+          detourRoute.legs[0].start_location.lat,
+        longitude:
+          detourRoute.legs[0].start_location.lng,
+        title: 'Start',
+        description: 'Starting point',
+      },
+      {
+        latitude: poi.location.latitude,
+        longitude: poi.location.longitude,
+        title: poi.name,
+        description: 'Stop here',
+      },
+      {
+        latitude:
+          detourRoute.legs[detourRoute.legs.length - 1].end_location.lat,
+        longitude:
+          detourRoute.legs[detourRoute.legs.length - 1].end_location.lng,
+        title: 'End',
+        description: 'Destination',
+      },
+    ];
+
+    return {
+      coordinates,
+      encodedPolyline: detourRoute.overview_polyline.points,
+      markers,
+      extraDistance: detourDistance - directDistance,
+      extraTime: detourTime - directTime,
+      directDistance,
+      directTime,
+    };
+  } catch (error) {
+    console.error('Error generating detour with POI:', error);
+    throw error;
+  }
 }
 
 /**

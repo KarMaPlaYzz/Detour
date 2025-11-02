@@ -550,7 +550,7 @@ export default function MapViewComponent({
         })}
       </MapView>
       {isLoading && (
-        <BlurView intensity={15} tint='light' style={styles.loadingOverlay}>
+        <BlurView intensity={15} tint='dark' style={styles.loadingOverlay}>
           <View style={styles.loadingOverlay}>
             <ActivityIndicator size="large" color="#FFFFFF" />
             <Text style={styles.loadingText}>Calculating route...</Text>

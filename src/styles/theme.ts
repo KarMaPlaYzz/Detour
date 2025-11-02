@@ -7,12 +7,19 @@ export const theme = {
     card: '#FFFFFF',
     cardLight: '#FFFFFF',
     cardBorder: '#E8ECEF',
+    cardBorderLightDark: '#B0BEC5',
     cardBgSecondary: '#F5F7FA',
     
     // Text
     textPrimary: '#1A1D23',
     textSecondary: '#6B7280',
     textTertiary: '#9CA3AF',
+    textWhite: '#FFFFFF',
+    
+    // Text colors for dark blur backgrounds
+    textOnDarkBlur: '#FFFFFF',
+    textSecondaryOnDarkBlur: '#E5E7EB',
+    textTertiaryOnDarkBlur: '#D1D5DB',
     
     // Accents - Modern blue
     accent: '#0066FF',
@@ -44,6 +51,8 @@ export const theme = {
     md: 12,
     lg: 16,
     xl: 20,
+    xxl: 24,
+    xxxl: 28,
     full: 9999,
   },
   typography: {

@@ -11,11 +11,13 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { FloatingNavigation } from '@/components/FloatingNavigation';
 import InputFormComponent from '@/components/InputFormComponent';
 import MapViewComponent from '@/components/MapViewComponent';
+import POISelectionSheet from '@/components/POISelectionSheet';
+import QuickSummaryBar from '@/components/QuickSummaryBar';
 import SaveDetourModal from '@/components/SaveDetourModal';
-import { discoverPOITypes, getBasicRoute, searchPOIsAlongRoute } from '@/services/DetourService';
+import { discoverPOITypes, generateDetourWithPOI, getBasicRoute, searchPOIsAlongRoute } from '@/services/DetourService';
 import { saveDetourLocal } from '@/services/StorageService';
 import { theme } from '@/styles/theme';
-import { DetourRoute, Interest, Location as LocationType } from '@/types/detour';
+import { DetourRoute, Interest, Location as LocationType, POI } from '@/types/detour';
 
 export default function ExploreScreen() {
   const [detourRoute, setDetourRoute] = React.useState<DetourRoute | null>(null);
@@ -23,9 +25,12 @@ export default function ExploreScreen() {
   const [saveModalVisible, setSaveModalVisible] = React.useState(false);
   const [currentLocation, setCurrentLocation] = React.useState<LocationType | null>(null);
   const [availablePOITypes, setAvailablePOITypes] = React.useState<{ [key: string]: string }>({});
-  const [selectedTransportMode, setSelectedTransportMode] = React.useState<'car' | 'walk' | 'bike' | 'transit'>('car');
+  const [selectedTransportMode, setSelectedTransportMode] = React.useState<'car' | 'walk' | 'bike' | 'transit'>('walk');
   const [lastSearchInputs, setLastSearchInputs] = React.useState<{ start: string; end: string } | null>(null);
-  
+  const [poiSheetVisible, setPoiSheetVisible] = React.useState(false);
+  const [selectedInterestForSheet, setSelectedInterestForSheet] = React.useState<string>('');
+  const [selectedPOI, setSelectedPOI] = React.useState<POI | null>(null);
+
   // Store inputs for saving
   const [lastInputs, setLastInputs] = React.useState<{
     start: LocationType;
@@ -69,32 +74,32 @@ export default function ExploreScreen() {
     setLastSearchInputs({ start: startInput, end: endInput });
 
     try {
-      const route = await getBasicRoute({ 
-        start: startInput, 
+      const route = await getBasicRoute({
+        start: startInput,
         end: endInput,
         mode: selectedTransportMode === 'car' ? 'driving' : selectedTransportMode === 'walk' ? 'walking' : selectedTransportMode === 'bike' ? 'bicycling' : 'transit',
       });
       setDetourRoute(route as DetourRoute);
-      
+
       // Discover available POI types along the route
       const poiTypes = await discoverPOITypes(route.coordinates, 800);
       setAvailablePOITypes(poiTypes);
-      
+
       // Store the actual coordinates from the route
       const firstAvailableType = Object.keys(poiTypes)[0] as Interest || 'Street Art';
-      setLastInputs({ 
-        start: route.markers[0], 
-        end: route.markers[1], 
+      setLastInputs({
+        start: route.markers[0],
+        end: route.markers[1],
         interest: firstAvailableType
       });
     } catch (error) {
       console.error('Route error:', error);
-      
+
       let message = 'An unexpected error occurred. Please try again.';
       if (error instanceof Error) {
         message = error.message;
       }
-      
+
       Alert.alert('Error', message);
     } finally {
       setIsLoading(false);
@@ -103,7 +108,7 @@ export default function ExploreScreen() {
 
   const handleTransportModeChange = async (mode: 'car' | 'walk' | 'bike' | 'transit') => {
     setSelectedTransportMode(mode);
-    
+
     // If we have a previous search, update the route with the new mode
     if (lastSearchInputs) {
       setIsLoading(true);
@@ -127,6 +132,7 @@ export default function ExploreScreen() {
     if (!detourRoute?.coordinates) return;
 
     setIsLoading(true);
+    setSelectedInterestForSheet(interest);
     try {
       const result = await searchPOIsAlongRoute({
         coordinates: detourRoute.coordinates,
@@ -148,6 +154,9 @@ export default function ExploreScreen() {
           interest: interest as Interest,
         });
       }
+
+      // Show POI selection sheet
+      setPoiSheetVisible(true);
     } catch (error) {
       console.error('POI search error:', error);
       let message = 'Could not find POIs for this interest. Try another category.';
@@ -183,19 +192,56 @@ export default function ExploreScreen() {
     }
   };
 
+  const handleSelectPOI = async (poi: POI) => {
+    if (!detourRoute || !lastSearchInputs) return;
+
+    setIsLoading(true);
+    setPoiSheetVisible(false);
+
+    try {
+      // Generate detour route with POI as waypoint
+      // Always use walking mode for detours to encourage exploration
+      const detourWithPOI = await generateDetourWithPOI({
+        start: lastSearchInputs.start,
+        end: lastSearchInputs.end,
+        poi: {
+          location: poi.location,
+          name: poi.name,
+        },
+        mode: 'walking',
+      });
+
+      // Update the route to show the detour
+      setDetourRoute(prev => prev ? {
+        ...prev,
+        coordinates: detourWithPOI.coordinates,
+        encodedPolyline: detourWithPOI.encodedPolyline,
+        markers: detourWithPOI.markers,
+        poi: poi,
+      } : null);
+
+      setSelectedPOI(poi);
+    } catch (error) {
+      console.error('Error selecting POI:', error);
+      Alert.alert('Error', 'Could not update route with this POI');
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
   const initialRegion = currentLocation
     ? {
-        latitude: currentLocation.latitude,
-        longitude: currentLocation.longitude,
-        latitudeDelta: 0.05,
-        longitudeDelta: 0.05,
-      }
+      latitude: currentLocation.latitude,
+      longitude: currentLocation.longitude,
+      latitudeDelta: 0.05,
+      longitudeDelta: 0.05,
+    }
     : {
-        latitude: 34.0522,
-        longitude: -118.2437,
-        latitudeDelta: 0.1,
-        longitudeDelta: 0.1,
-      };
+      latitude: 34.0522,
+      longitude: -118.2437,
+      latitudeDelta: 0.1,
+      longitudeDelta: 0.1,
+    };
 
   // Prepare dynamic action buttons for floating navigation
   const dynamicActions = React.useMemo(() => {
@@ -216,14 +262,14 @@ export default function ExploreScreen() {
 
   return (
     <View style={styles.container}>
-      <StatusBar style="light" />
-      
+      <StatusBar style='dark' />
+
       <MapViewComponent
         coordinates={detourRoute?.coordinates}
         markers={detourRoute?.markers}
         pois={detourRoute?.pois}
         initialRegion={initialRegion}
-        centerOffset={{x:0, y:0.6}}
+        centerOffset={{ x: 0, y: 0.6 }}
         isLoading={isLoading}
       />
 
@@ -239,6 +285,14 @@ export default function ExploreScreen() {
           detourRoute={detourRoute}
           availablePOITypes={availablePOITypes}
         />
+
+        {/* Quick Summary Bar - Shows transport mode, time, and selected POI */}
+        <QuickSummaryBar
+          selectedTransportMode={selectedTransportMode}
+          selectedPOI={selectedPOI}
+          detourRoute={detourRoute}
+          visible={!!detourRoute && !isLoading}
+        />
       </SafeAreaView>
 
       <SaveDetourModal
@@ -246,6 +300,16 @@ export default function ExploreScreen() {
         onClose={() => setSaveModalVisible(false)}
         onSave={handleSaveDetour}
         poiName={detourRoute?.poi?.name || 'Your Detour'}
+      />
+
+      <POISelectionSheet
+        visible={poiSheetVisible}
+        pois={detourRoute?.pois || []}
+        selectedPOIName={selectedPOI?.name}
+        interest={selectedInterestForSheet}
+        onSelectPOI={handleSelectPOI}
+        onClose={() => setPoiSheetVisible(false)}
+        isLoading={isLoading}
       />
 
       <FloatingNavigation

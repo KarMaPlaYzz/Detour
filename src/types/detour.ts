@@ -29,6 +29,12 @@ export interface DetourRoute {
     bike?: number;       // seconds
     transit?: number;    // seconds
   };
+  durationsWithTraffic?: {
+    car?: number;        // seconds with traffic
+    walk?: number;       // seconds
+    bike?: number;       // seconds
+    transit?: number;    // seconds
+  };
 }
 
 export interface SavedDetour {

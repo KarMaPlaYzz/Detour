@@ -37,6 +37,24 @@ function formatDuration(seconds: number | undefined): string {
   return `${minutes} m`;
 }
 
+/**
+ * Get color based on traffic delay percentage
+ * Returns white when no delay, or traffic severity color with granular thresholds
+ */
+function getTrafficColor(normalDuration: number | undefined, trafficDuration: number | undefined): string {
+  if (!normalDuration || !trafficDuration) return '#FFFFFF'; // White: no traffic data
+  
+  const delayPercentage = ((trafficDuration - normalDuration) / normalDuration) * 100;
+  
+  if (delayPercentage <= 0) return theme.colors.textTertiary; // White: no delay
+  if (delayPercentage <= 5) return '#66BB6A'; // Light green: minimal delay (0-5%)
+  if (delayPercentage <= 10) return '#FDD835'; // Yellow: light traffic (5-10%)
+  if (delayPercentage <= 15) return '#FFB74D'; // Light orange: moderate traffic (10-15%)
+  if (delayPercentage <= 25) return '#FF9800'; // Orange: moderate-heavy traffic (15-25%)
+  if (delayPercentage <= 35) return '#F4511E'; // Deep orange: heavy traffic (25-35%)
+  return '#E53935'; // Red: severe traffic (>35%)
+}
+
 interface InputFormComponentProps {
   onFindDetour: (start: string, end: string) => void;
   onSearchPOIs?: (interest: string) => void;
@@ -500,11 +518,13 @@ export default function InputFormComponent({
         setStartInput(startValue);
       }
       
-      console.log('[handleSuggestionSelect] Calling onFindDetour with:', { startValue, newEndInput });
-      if (startValue) {
+      // Only call onFindDetour if BOTH start and end are filled
+      if (startValue && newEndInput.trim()) {
+        console.log('[handleSuggestionSelect] Calling onFindDetour with:', { startValue, newEndInput });
         isUpdatingRouteRef.current = true;
-        // Don't collapse until after the route is found
         onFindDetour(startValue, newEndInput);
+      } else {
+        console.log('[handleSuggestionSelect] Skipping search - missing start or end location');
       }
       
       // Collapse form after a brief delay to allow state to settle
@@ -531,13 +551,13 @@ export default function InputFormComponent({
       
       console.log('[handleSuggestionSelect] userEditedStartLocationRef set to true');
       
-      // If end is already filled, search with new start location
-      if (currentEndInput) {
+      // Only call onFindDetour if BOTH start and end are filled
+      if (newStartInput.trim() && currentEndInput) {
         console.log('[handleSuggestionSelect] End input exists, calling onFindDetour');
         isUpdatingRouteRef.current = true;
         onFindDetour(newStartInput, currentEndInput);
       } else {
-        console.log('[handleSuggestionSelect] End input is empty, not calling onFindDetour');
+        console.log('[handleSuggestionSelect] Skipping search - missing start or end location');
       }
       
       // Collapse form after a brief delay to allow state to settle
@@ -573,11 +593,6 @@ export default function InputFormComponent({
               inputRange: [0, 1],
               outputRange: ['transparent', theme.colors.card],
             }),
-            borderBottomColor: headerAnimRef.current.interpolate({
-              inputRange: [0, 1],
-              outputRange: ['transparent', theme.colors.cardBorder],
-            }),
-            borderBottomWidth: 1,
             opacity: summaryVisibilityRef.current,
             pointerEvents: isLoading ? 'none' : 'auto',
           }
@@ -585,7 +600,7 @@ export default function InputFormComponent({
       >
         {/* Search Bar - Shows when no route */}
         {!hasRoute && (
-          <BlurView style={styles.suggestionsBlur} tint="light" intensity={80}> 
+          <BlurView style={styles.suggestionsBlur} tint="dark" intensity={80}> 
             <Animated.View
               style={{
                 opacity: headerAnimRef.current.interpolate({
@@ -665,14 +680,14 @@ export default function InputFormComponent({
                             style={styles.suggestionItem}
                             onPress={() => handleSuggestionSelect(item.fullDescription)}
                           >
-                            <IconSymbol name="location" size={16} color={theme.colors.textTertiary} />
+                            <IconSymbol name="location" size={16} color={theme.colors.textTertiaryOnDarkBlur} />
                             <View style={styles.suggestionContent}>
                               <Text style={styles.suggestionText} numberOfLines={1}>{item.mainText}</Text>
                               {item.secondaryText && (
                                 <Text style={styles.suggestionSecondaryText} numberOfLines={1}>{item.secondaryText}</Text>
                               )}
                             </View>
-                            <IconSymbol name="arrow.up.left" size={14} color={theme.colors.textTertiary} />
+                            <IconSymbol name="arrow.up.left" size={14} color={theme.colors.textTertiaryOnDarkBlur} />
                           </TouchableOpacity>
                         ))}
                       </View>
@@ -812,20 +827,22 @@ export default function InputFormComponent({
                 </View>
               </Animated.View>
 
-              {/* Toggle Icon Button - Always rendered, animated opacity */}
+              {/* Toggle Icon Button - Always rendered, always available when route exists */}
               <Animated.View
                 style={{
-                  opacity: collapseAnimRef.current,
-                  pointerEvents: isFormExpanded ? 'auto' : 'none',
+                  opacity: 1,
+                  pointerEvents: 'auto',
                 }}
               >
                 <TouchableOpacity 
                   style={styles.toggleButton}
                   onPress={() => {
-                    setIsFormExpanded(false);
+                    setIsFormExpanded(!isFormExpanded);
                     // Blur inputs when collapsing
-                    startInputRef.current?.blur();
-                    endInputRef.current?.blur();
+                    if (isFormExpanded) {
+                      startInputRef.current?.blur();
+                      endInputRef.current?.blur();
+                    }
                   }}
                   activeOpacity={0.7}
                 >
@@ -851,7 +868,7 @@ export default function InputFormComponent({
                 opacity: suggestionsAnimRef.current,
                 maxHeight: suggestionsAnimRef.current.interpolate({
                   inputRange: [0, 1],
-                  outputRange: [0, 500],
+                  outputRange: [0, 320],
                 }),
                 transform: [{
                   translateY: suggestionsAnimRef.current.interpolate({
@@ -864,8 +881,9 @@ export default function InputFormComponent({
                 left: 0,
                 right: 0,
                 zIndex: 1000,
+                overflow: 'hidden',
               }}>
-                <BlurView style={styles.suggestionsBlur} tint="light" intensity={80}>
+                <BlurView intensity={80} style={{ flex: 1, width: '100%' }} tint="dark">
                   <View style={styles.suggestionsContainer}>
                     {suggestions.slice(0, 5).map((item, index) => (
                       <TouchableOpacity
@@ -1004,6 +1022,11 @@ export default function InputFormComponent({
                         style={[
                           styles.transportDuration,
                           selectedTransportMode === 'car' && styles.transportDurationActive,
+                          {
+                            color: detourRoute?.durationsWithTraffic?.car 
+                              ? getTrafficColor(detourRoute.durations?.car, detourRoute.durationsWithTraffic.car)
+                              : undefined,
+                          },
                         ]}
                       >
                         {formatDuration(detourRoute?.durations?.car)}
@@ -1162,7 +1185,7 @@ const styles = StyleSheet.create({
     gap: theme.spacing.md,
     paddingHorizontal: theme.spacing.md,
     backgroundColor: theme.colors.card,
-    borderRadius: theme.borderRadius.md,
+    borderRadius: theme.borderRadius.full,
     borderWidth: 1,
     borderColor: theme.colors.cardBorder,
     height: 52,
@@ -1191,14 +1214,14 @@ const styles = StyleSheet.create({
 
   suggestionsContainer: {
     borderRadius: theme.borderRadius.md,
-    marginHorizontal: theme.spacing.sm,
     borderWidth: 0,
     borderColor: 'transparent',
     overflow: 'hidden',
+    paddingVertical: theme.spacing.xs,
   },
 
   suggestionsBlur: {
-    borderRadius: theme.borderRadius.md,
+    borderRadius: theme.borderRadius.xxxl,
     overflow: 'hidden',
     marginHorizontal: theme.spacing.sm,
   },
@@ -1209,8 +1232,10 @@ const styles = StyleSheet.create({
     gap: theme.spacing.md,
     paddingHorizontal: theme.spacing.md,
     paddingVertical: theme.spacing.md,
-    borderBottomWidth: 1,
-    borderBottomColor: theme.colors.cardBorder,
+    borderBottomWidth: .5,
+    borderBottomColor: theme.colors.textTertiary,
+    borderBottomRightRadius: theme.borderRadius.xxl,
+    borderBottomLeftRadius: theme.borderRadius.xxl,
   },
 
   suggestionContent: {
@@ -1219,13 +1244,13 @@ const styles = StyleSheet.create({
 
   suggestionText: {
     ...theme.typography.body,
-    color: theme.colors.textPrimary,
+    color: theme.colors.textOnDarkBlur,
     fontSize: 15,
   },
 
   suggestionSecondaryText: {
     ...theme.typography.caption,
-    color: theme.colors.textTertiary,
+    color: theme.colors.textTertiaryOnDarkBlur,
     fontSize: 12,
     marginTop: 2,
   },

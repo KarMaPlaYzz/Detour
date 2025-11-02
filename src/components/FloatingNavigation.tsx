@@ -102,7 +102,7 @@ export const FloatingNavigation: React.FC<FloatingNavigationProps> = ({
   ];
 
   return (
-    <BlurView intensity={15} tint="light" style={[styles.blurContainer, { bottom: bottomOffset }]}>
+    <BlurView intensity={45} tint="dark" style={[styles.blurContainer, { bottom: bottomOffset }]}>
       <View style={styles.contentContainer}>
         {/* Dynamic Actions Section */}
         <Animated.View
@@ -187,7 +187,7 @@ const styles = StyleSheet.create({
     borderRadius: theme.borderRadius.full,
     overflow: 'hidden',
     borderWidth: 1,
-    borderColor: theme.colors.cardBorder,
+    borderColor: theme.colors.textTertiary,
     ...theme.shadows.lg,
   },
   contentContainer: {
