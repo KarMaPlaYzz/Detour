@@ -1,5 +1,4 @@
 import { theme } from '@/styles/theme';
-import { MaterialCommunityIcons } from '@expo/vector-icons';
 import BlurView from 'expo-blur/build/BlurView';
 import { usePathname, useRouter } from 'expo-router';
 import React from 'react';
@@ -129,7 +128,7 @@ export const FloatingNavigation: React.FC<FloatingNavigationProps> = ({
               onPress={action.onPress}
               activeOpacity={0.7}
             >
-              <MaterialCommunityIcons
+              <IconSymbol
                 name={action.icon as any}
                 size={28}
                 color={action.color || theme.colors.accent}

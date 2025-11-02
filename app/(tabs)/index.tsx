@@ -11,8 +11,9 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { FloatingNavigation } from '@/components/FloatingNavigation';
 import InputFormComponent from '@/components/InputFormComponent';
 import MapViewComponent from '@/components/MapViewComponent';
-import POISelectionSheet from '@/components/POISelectionSheet';
-import QuickSummaryBar from '@/components/QuickSummaryBar';
+import POIInterestsBar from '@/components/POIInterestsBar';
+// import POISelectionSheet from '@/components/POISelectionSheet';
+// import QuickSummaryBar from '@/components/QuickSummaryBar';
 import SaveDetourModal from '@/components/SaveDetourModal';
 import { discoverPOITypes, generateDetourWithPOI, getBasicRoute, searchPOIsAlongRoute } from '@/services/DetourService';
 import { saveDetourLocal } from '@/services/StorageService';
@@ -27,9 +28,8 @@ export default function ExploreScreen() {
   const [availablePOITypes, setAvailablePOITypes] = React.useState<{ [key: string]: string }>({});
   const [selectedTransportMode, setSelectedTransportMode] = React.useState<'car' | 'walk' | 'bike' | 'transit'>('walk');
   const [lastSearchInputs, setLastSearchInputs] = React.useState<{ start: string; end: string } | null>(null);
-  const [poiSheetVisible, setPoiSheetVisible] = React.useState(false);
-  const [selectedInterestForSheet, setSelectedInterestForSheet] = React.useState<string>('');
   const [selectedPOI, setSelectedPOI] = React.useState<POI | null>(null);
+  const [poiCosts, setPoiCosts] = React.useState<{ [key: string]: { extraTime: number; extraDistance: number } }>({});
 
   // Store inputs for saving
   const [lastInputs, setLastInputs] = React.useState<{
@@ -132,7 +132,6 @@ export default function ExploreScreen() {
     if (!detourRoute?.coordinates) return;
 
     setIsLoading(true);
-    setSelectedInterestForSheet(interest);
     try {
       const result = await searchPOIsAlongRoute({
         coordinates: detourRoute.coordinates,
@@ -155,8 +154,8 @@ export default function ExploreScreen() {
         });
       }
 
-      // Show POI selection sheet
-      setPoiSheetVisible(true);
+      // Pre-calculate costs for all POIs (without detour route)
+      calculatePOICosts(result.pois, lastSearchInputs);
     } catch (error) {
       console.error('POI search error:', error);
       let message = 'Could not find POIs for this interest. Try another category.';
@@ -167,6 +166,42 @@ export default function ExploreScreen() {
     } finally {
       setIsLoading(false);
     }
+  };
+
+  const calculatePOICosts = async (pois: POI[], searchInputs: { start: string; end: string } | null) => {
+    if (!pois || !searchInputs) return;
+
+    const costs: { [key: string]: { extraTime: number; extraDistance: number } } = {};
+
+    // For each POI, calculate the detour cost (extra time and distance)
+    for (const poi of pois) {
+      try {
+        const detourWithPOI = await generateDetourWithPOI({
+          start: searchInputs.start,
+          end: searchInputs.end,
+          poi: {
+            location: poi.location,
+            name: poi.name,
+          },
+          mode: 'walking',
+        });
+
+        if (detourRoute) {
+          // Calculate difference from original route
+          const extraTime = (detourWithPOI.extraTime || 0);
+          const extraDistance = (detourWithPOI.extraDistance || 0);
+          
+          costs[poi.name] = {
+            extraTime,
+            extraDistance,
+          };
+        }
+      } catch (error) {
+        console.log(`Could not calculate cost for ${poi.name}:`, error);
+      }
+    }
+
+    setPoiCosts(costs);
   };
 
   const handleSaveDetour = async (name: string) => {
@@ -196,7 +231,6 @@ export default function ExploreScreen() {
     if (!detourRoute || !lastSearchInputs) return;
 
     setIsLoading(true);
-    setPoiSheetVisible(false);
 
     try {
       // Generate detour route with POI as waypoint
@@ -252,7 +286,7 @@ export default function ExploreScreen() {
     return [
       {
         id: 'reset',
-        icon: 'refresh',
+        icon: 'arrow.counterclockwise',
         onPress: handleReset,
         bgColor: theme.colors.accentLight,
         color: theme.colors.accent,
@@ -280,19 +314,27 @@ export default function ExploreScreen() {
           onSearchPOIs={handleSearchPOIs}
           onTransportModeChange={handleTransportModeChange}
           onReset={handleReset}
+          onSaveDetour={() => setSaveModalVisible(true)}
+          onSelectPOI={handleSelectPOI}
           isLoading={isLoading}
           currentLocation={currentLocation}
           detourRoute={detourRoute}
           availablePOITypes={availablePOITypes}
+          selectedPOI={selectedPOI}
+          poiCosts={poiCosts}
         />
 
-        {/* Quick Summary Bar - Shows transport mode, time, and selected POI */}
-        <QuickSummaryBar
-          selectedTransportMode={selectedTransportMode}
-          selectedPOI={selectedPOI}
-          detourRoute={detourRoute}
-          visible={!!detourRoute && !isLoading}
-        />
+        {/* POI Interests Bar - Show when route is available and POI types are discovered */}
+        {detourRoute && Object.keys(availablePOITypes).length > 0 && (
+          <POIInterestsBar
+            visible={true}
+            dynamicInterests={Object.values(availablePOITypes)}
+            selectedInterest={''}
+            poiTypeMap={availablePOITypes}
+            onSelectInterest={handleSearchPOIs}
+            isLoading={isLoading}
+          />
+        )}
       </SafeAreaView>
 
       <SaveDetourModal
@@ -300,16 +342,6 @@ export default function ExploreScreen() {
         onClose={() => setSaveModalVisible(false)}
         onSave={handleSaveDetour}
         poiName={detourRoute?.poi?.name || 'Your Detour'}
-      />
-
-      <POISelectionSheet
-        visible={poiSheetVisible}
-        pois={detourRoute?.pois || []}
-        selectedPOIName={selectedPOI?.name}
-        interest={selectedInterestForSheet}
-        onSelectPOI={handleSelectPOI}
-        onClose={() => setPoiSheetVisible(false)}
-        isLoading={isLoading}
       />
 
       <FloatingNavigation

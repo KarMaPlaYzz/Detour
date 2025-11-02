@@ -7,7 +7,6 @@ import {
   Animated,
   Keyboard,
   Pressable,
-  ScrollView,
   StyleSheet,
   Text,
   TextInput,
@@ -16,6 +15,9 @@ import {
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { IconSymbol } from '../../components/ui/icon-symbol';
+import BottomSheet from './BottomSheet';
+import InlinePOIList from './InlinePOIList';
+import TransportModeBar from './TransportModeBar';
 
 /**
  * Format duration in seconds to a human-readable string
@@ -60,10 +62,14 @@ interface InputFormComponentProps {
   onSearchPOIs?: (interest: string) => void;
   onTransportModeChange?: (mode: 'car' | 'walk' | 'bike' | 'transit') => void;
   onReset?: () => void;
+  onSaveDetour?: () => void;
+  onSelectPOI?: (poi: any) => void;
   isLoading?: boolean;
   currentLocation?: Location | null;
   detourRoute?: any | null;
   availablePOITypes?: { [key: string]: string };
+  selectedPOI?: any | null;
+  poiCosts?: { [key: string]: { extraTime: number; extraDistance: number } };
 }
 
 const INTERESTS: Interest[] = ['Street Art', 'Architecture', 'Cafes'];
@@ -89,10 +95,14 @@ export default function InputFormComponent({
   onSearchPOIs,
   onTransportModeChange,
   onReset,
+  onSaveDetour,
+  onSelectPOI,
   isLoading = false,
   currentLocation,
   detourRoute,
   availablePOITypes = {},
+  selectedPOI,
+  poiCosts = {},
 }: InputFormComponentProps) {
   const insets = useSafeAreaInsets();
   const [endInput, setEndInput] = useState('');
@@ -120,6 +130,7 @@ export default function InputFormComponent({
   const [startInputFocused, setStartInputFocused] = useState(false);
   const [selectedTransportMode, setSelectedTransportMode] = useState<'car' | 'walk' | 'bike' | 'transit'>('walk');
   const [isFormExpanded, setIsFormExpanded] = useState(false);
+  const [showPOIBottomSheet, setShowPOIBottomSheet] = useState(false);
   const isFormExpandedRef = useRef(false);
   const [focusOnExpand, setFocusOnExpand] = useState<'start' | 'end' | null>(null);
   const hasPopulatedStartLocationRef = useRef(false);
@@ -968,159 +979,78 @@ export default function InputFormComponent({
                   flexDirection: 'column',
                 }}
               >
-                {/* Transportation Mode Selection */}
-                <View style={styles.transportSection}>
-                  <View style={styles.transportHeader}>
-                    <IconSymbol name="car.fill" size={18} color={theme.colors.accent} />
-                    <Text style={styles.transportTitle}>How will you travel?</Text>
-                  </View>
-                  
-                  <View style={styles.transportButtons}>
+
+                {/* Transport Mode Bar */}
+                {detourRoute && (
+                  <TransportModeBar
+                    selectedTransportMode={selectedTransportMode}
+                    onSelectTransportMode={(mode) => {
+                      setSelectedTransportMode(mode);
+                      onTransportModeChange?.(mode);
+                    }}
+                    durations={detourRoute.durations || { walk: 0, car: 0, bike: 0, transit: 0 }}
+                    visible={true}
+                    isLoading={isLoading}
+                  />
+                )}
+
+                {/* Action Buttons
+                {detourRoute && (
+                  <View style={styles.actionButtons}>
                     <TouchableOpacity
-                      style={[
-                        styles.transportButton,
-                        selectedTransportMode === 'walk' && styles.transportButtonActive,
-                      ]}
-                      onPress={() => {
-                        setSelectedTransportMode('walk');
-                        onTransportModeChange?.('walk');
-                      }}
+                      style={styles.secondaryButton}
+                      onPress={onReset}
                       disabled={isLoading}
                     >
-                      <IconSymbol
-                        name="figure.walk"
-                        size={20}
-                        color={selectedTransportMode === 'walk' ? theme.colors.card : theme.colors.textSecondary}
-                      />
-                      <Text
-                        style={[
-                          styles.transportDuration,
-                          selectedTransportMode === 'walk' && styles.transportDurationActive,
-                        ]}
-                      >
-                        {formatDuration(detourRoute?.durations?.walk)}
-                      </Text>
+                      <IconSymbol name="arrow.counterclockwise" size={18} color={theme.colors.accent} />
+                      <Text style={styles.secondaryButtonText}>Reset</Text>
                     </TouchableOpacity>
 
                     <TouchableOpacity
-                      style={[
-                        styles.transportButton,
-                        selectedTransportMode === 'car' && styles.transportButtonActive,
-                      ]}
-                      onPress={() => {
-                        setSelectedTransportMode('car');
-                        onTransportModeChange?.('car');
-                      }}
+                      style={[styles.primaryButton, isLoading && styles.primaryButtonDisabled]}
+                      onPress={onSaveDetour}
                       disabled={isLoading}
                     >
-                      <IconSymbol
-                        name="car.fill"
-                        size={20}
-                        color={selectedTransportMode === 'car' ? theme.colors.card : theme.colors.textSecondary}
-                      />
-                      <Text
-                        style={[
-                          styles.transportDuration,
-                          selectedTransportMode === 'car' && styles.transportDurationActive,
-                          {
-                            color: detourRoute?.durationsWithTraffic?.car 
-                              ? getTrafficColor(detourRoute.durations?.car, detourRoute.durationsWithTraffic.car)
-                              : undefined,
-                          },
-                        ]}
-                      >
-                        {formatDuration(detourRoute?.durations?.car)}
-                      </Text>
-                    </TouchableOpacity>
-
-                    <TouchableOpacity
-                      style={[
-                        styles.transportButton,
-                        selectedTransportMode === 'bike' && styles.transportButtonActive,
-                      ]}
-                      onPress={() => {
-                        setSelectedTransportMode('bike');
-                        onTransportModeChange?.('bike');
-                      }}
-                      disabled={isLoading}
-                    >
-                      <IconSymbol
-                        name="bicycle"
-                        size={20}
-                        color={selectedTransportMode === 'bike' ? theme.colors.card : theme.colors.textSecondary}
-                      />
-                      <Text
-                        style={[
-                          styles.transportDuration,
-                          selectedTransportMode === 'bike' && styles.transportDurationActive,
-                        ]}
-                      >
-                        {formatDuration(detourRoute?.durations?.bike)}
+                      <IconSymbol name="checkmark" size={18} color={theme.colors.card} />
+                      <Text style={styles.primaryButtonText}>
+                        {selectedPOI ? 'Save with POI' : 'Save Detour'}
                       </Text>
                     </TouchableOpacity>
                   </View>
-                </View>
-
-                {/* POI Selection */}
-                <View style={styles.poiSection}>
-                  <View style={styles.poiHeader}>
-                    <IconSymbol name="sparkles" size={18} color={theme.colors.accent} />
-                    <Text style={styles.poiTitle}>What interests you?</Text>
-                  </View>
-                  
-                  <ScrollView 
-                    horizontal
-                    showsHorizontalScrollIndicator={false}
-                    scrollEnabled={dynamicInterests.length > 3}
-                    style={styles.poiScroll}
-                  >
-                    <View style={styles.poiButtons}>
-                      {dynamicInterests.length > 0 ? (
-                        dynamicInterests.map((displayName) => {
-                          const rawType = Object.keys(poiTypeMap).find(
-                            key => poiTypeMap[key] === displayName
-                          );
-                          const isActive = selectedInterest === displayName;
-                          
-                          return (
-                            <TouchableOpacity
-                              key={displayName}
-                              style={[
-                                styles.poiButton,
-                                isActive && styles.poiButtonActive,
-                              ]}
-                              onPress={() => {
-                                setSelectedInterest(displayName);
-                                if (onSearchPOIs && rawType) {
-                                  onSearchPOIs(rawType);
-                                }
-                              }}
-                              disabled={isLoading}
-                            >
-                              <Text
-                                style={[
-                                  styles.poiButtonText,
-                                  isActive && styles.poiButtonTextActive,
-                                ]}
-                              >
-                                {displayName}
-                              </Text>
-                            </TouchableOpacity>
-                          );
-                        })
-                      ) : (
-                        <Text style={styles.loadingText}>Loading options...</Text>
-                      )}
-                    </View>
-                  </ScrollView>
-                </View>
-
+                )} */}
 
               </Animated.View>
             )}
           </Animated.View>
         )}
       </Animated.View>
+
+      {/* POI Selection Bottom Sheet */}
+      <BottomSheet
+        visible={showPOIBottomSheet}
+        onClose={() => setShowPOIBottomSheet(false)}
+        snapPoints={[0.6, 0.85]}
+        maxHeight={undefined}
+      >
+        {selectedInterest && detourRoute?.pois && detourRoute.pois.length > 0 ? (
+          <InlinePOIList
+            visible={true}
+            pois={detourRoute.pois}
+            selectedPOIName={selectedPOI?.name}
+            interest={selectedInterest}
+            onSelectPOI={(poi: any) => {
+              if (onSelectPOI) {
+                onSelectPOI(poi);
+                setShowPOIBottomSheet(false);
+              }
+            }}
+            isLoading={isLoading}
+            poiCosts={poiCosts}
+          />
+        ) : (
+          <Text style={styles.emptyStateText}>Loading POIs...</Text>
+        )}
+      </BottomSheet>
     </View>
   );
 }
@@ -1408,57 +1338,11 @@ const styles = StyleSheet.create({
     ...theme.shadows.sm,
   },
 
-  poiHeader: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: theme.spacing.sm,
-  },
-
-  poiTitle: {
-    ...theme.typography.bodySemibold,
-    color: theme.colors.textPrimary,
-  },
-
-  poiScroll: {
-    flexGrow: 0,
-    marginHorizontal: -theme.spacing.lg,
-    paddingHorizontal: theme.spacing.lg,
-  },
-
-  poiButtons: {
-    flexDirection: 'row',
-    gap: theme.spacing.sm,
-    paddingVertical: theme.spacing.xs,
-  },
-
-  poiButton: {
-    paddingHorizontal: theme.spacing.lg,
-    paddingVertical: theme.spacing.sm,
-    borderRadius: theme.borderRadius.full,
-    borderWidth: 1.5,
-    borderColor: theme.colors.cardBorder,
-    backgroundColor: theme.colors.card,
-    ...theme.shadows.xs,
-  },
-
-  poiButtonActive: {
-    backgroundColor: theme.colors.accent,
-    borderColor: theme.colors.accent,
-  },
-
-  poiButtonText: {
-    ...theme.typography.buttonSmall,
-    color: theme.colors.textSecondary,
-  },
-
-  poiButtonTextActive: {
-    color: theme.colors.card,
-  },
-
-  loadingText: {
-    ...theme.typography.bodySmall,
+  emptyStateText: {
+    ...theme.typography.body,
     color: theme.colors.textTertiary,
-    fontStyle: 'italic',
+    textAlign: 'center',
+    marginTop: theme.spacing.xl,
   },
 
   actionButtons: {
@@ -1521,67 +1405,6 @@ const styles = StyleSheet.create({
 
   dotEnd: {
     backgroundColor: theme.colors.secondary,
-  },
-
-  /* Transportation Mode Selection */
-  transportSection: {
-    backgroundColor: theme.colors.card,
-    borderRadius: theme.borderRadius.lg,
-    padding: theme.spacing.md,
-    borderWidth: 1,
-    borderColor: theme.colors.cardBorder,
-    gap: theme.spacing.sm,
-    ...theme.shadows.sm,
-  },
-
-  transportHeader: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: theme.spacing.sm,
-  },
-
-  transportTitle: {
-    ...theme.typography.bodySemibold,
-    color: theme.colors.textPrimary,
-  },
-
-  transportButtons: {
-    flexDirection: 'row',
-    gap: theme.spacing.sm,
-    justifyContent: 'space-between',
-  },
-
-  transportButton: {
-    flex: 1,
-    flexDirection: 'column',
-    alignItems: 'center',
-    justifyContent: 'center',
-    gap: theme.spacing.xs,
-    paddingHorizontal: theme.spacing.md,
-    paddingVertical: theme.spacing.md,
-    borderRadius: theme.borderRadius.full,
-    borderWidth: 1.5,
-    borderColor: theme.colors.cardBorder,
-    backgroundColor: theme.colors.card,
-    minHeight: 40,
-    ...theme.shadows.xs,
-  },
-
-  transportButtonActive: {
-    backgroundColor: theme.colors.accent,
-    borderColor: theme.colors.accent,
-  },
-
-  transportDuration: {
-    ...theme.typography.caption,
-    color: theme.colors.textTertiary,
-    fontSize: 14,
-    flexShrink: 1,
-  },
-
-  transportDurationActive: {
-    color: theme.colors.card,
-    opacity: 0.9,
   },
 
   collapsedSummaryContainer: {
