@@ -17,6 +17,85 @@ const interestMapping: Record<Interest, InterestMapping> = {
   'Cafes': { type: 'cafe', keyword: 'cafe|coffee' },
 };
 
+/**
+ * Check if a place is likely a building/indoor venue vs an open area
+ * Filters out plazas, parks, and other open spaces that don't have a clear destination
+ */
+function isActualBuilding(types?: string[]): boolean {
+  if (!types || types.length === 0) return true; // Assume building if no type info
+
+  // Types that indicate open areas/outdoor spaces
+  const openAreaTypes = new Set([
+    'plaza',
+    'park',
+    'natural_feature',
+    'route',
+    'locality',
+    'political',
+    'administrative_area_level_1',
+    'administrative_area_level_2',
+    'administrative_area_level_3',
+    'administrative_area_level_4',
+    'administrative_area_level_5',
+    'country',
+    'postal_code',
+    'sublocality',
+    'sublocality_level_1',
+    'sublocality_level_2',
+    'intersection',
+    'premise',
+  ]);
+
+  // Types that indicate actual buildings/indoor venues (high priority)
+  const buildingTypes = new Set([
+    'cafe',
+    'restaurant',
+    'bar',
+    'museum',
+    'art_gallery',
+    'tourist_attraction',
+    'shopping_mall',
+    'store',
+    'library',
+    'church',
+    'mosque',
+    'synagogue',
+    'temple',
+    'movie_theater',
+    'amusement_park',
+    'zoo',
+    'aquarium',
+    'bowling_alley',
+    'casino',
+    'lodging',
+    'hostel',
+    'hotel',
+    'spa',
+    'gym',
+    'bank',
+    'post_office',
+    'pharmacy',
+    'hospital',
+    'doctor',
+    'night_club',
+    'book_store',
+    'clothing_store',
+    'gas_station',
+    'parking',
+  ]);
+
+  // Check if it has a building type
+  const hasBuilding = types.some(t => buildingTypes.has(t));
+  if (hasBuilding) return true;
+
+  // Check if it has an open area type (and no building type)
+  const hasOpenArea = types.some(t => openAreaTypes.has(t));
+  if (hasOpenArea) return false;
+
+  // Default to true if unclear
+  return true;
+}
+
 export interface GetBasicRouteParams {
   start: Location | string;
   end: Location | string;
@@ -128,6 +207,14 @@ export async function getBasicRoute({
 
     // Get direct route for the selected transportation mode
     const directRoute = await fetchDirectRoute(startCoords, endCoords, mode);
+    
+    // Validate route has legs
+    if (!directRoute.legs || directRoute.legs.length === 0) {
+      throw new Error('Direct route has no legs');
+    }
+    if (!directRoute.legs[0].start_location || !directRoute.legs[0].end_location) {
+      throw new Error('Direct route missing start or end location');
+    }
     
     // Extract actual start/end coordinates from the route
     const startLocation = {
@@ -507,6 +594,14 @@ export async function getDetourRoute({
     // Step 1: Get direct route to calculate bounds
     const directRoute = await fetchDirectRoute(startCoords, endCoords);
     
+    // Validate route has legs
+    if (!directRoute.legs || directRoute.legs.length === 0) {
+      throw new Error('Direct route has no legs');
+    }
+    if (!directRoute.legs[0].start_location || !directRoute.legs[0].end_location) {
+      throw new Error('Direct route missing start or end location');
+    }
+    
     // Extract actual start/end coordinates from the route
     const startLocation = {
       latitude: directRoute.legs[0].start_location.lat,
@@ -656,10 +751,10 @@ async function findPOIAlongRoute(
 ) {
   const mapping = interestMapping[interest] || { keyword: interest };
   
-  // Sample points along the ENTIRE route path - dense sampling for better coverage
+  // Sample points along the ENTIRE route path - balanced sampling
   // Create sample points at regular intervals along the route
   const samplePoints: Location[] = [];
-  const step = Math.max(1, Math.floor(routeCoordinates.length / 8)); // Sample 8+ points
+  const step = Math.max(1, Math.floor(routeCoordinates.length / 5)); // Sample 5 points (start, mid-points, end)
   
   for (let i = 0; i < routeCoordinates.length; i += step) {
     samplePoints.push(routeCoordinates[i]);
@@ -669,18 +764,14 @@ async function findPOIAlongRoute(
   if (samplePoints[samplePoints.length - 1] !== routeCoordinates[routeCoordinates.length - 1]) {
     samplePoints.push(routeCoordinates[routeCoordinates.length - 1]);
   }
-  
-  const allPOIs: Array<{
-    [key: string]: any;
-    name: string;
-    location: Location;
-    distanceToRoute: number;
-  }> = [];
 
+  // First, collect ALL raw results from all sample points
+  const rawPlaceMap = new Map<string, any>(); // Use placeId as key for deduplication
+  
   // Try each sample point and collect POIs
   for (const searchPoint of samplePoints) {
-    // For close routes, search in smaller radius. For longer routes, use more reasonable radius
-    const searchRadius = Math.min(radius, 500); // Much smaller search radius - 500m max
+    // Search in reasonable radius for POIs
+    const searchRadius = Math.min(radius, 1000); // 1000m search radius
     
     let url = `${PLACES_URL}?location=${searchPoint.latitude},${searchPoint.longitude}&radius=${searchRadius}&key=${GOOGLE_MAPS_API_KEY}`;
     
@@ -697,43 +788,10 @@ async function findPOIAlongRoute(
       const data = await response.json();
       
       if (data.status === 'OK' && data.results && data.results.length > 0) {
-        // Calculate distance from each POI to the route
+        // Collect all raw results, deduplicating by placeId
         for (const place of data.results) {
-          const poiLocation = {
-            latitude: place.geometry.location.lat,
-            longitude: place.geometry.location.lng,
-          };
-          
-          // Find the closest point on the route to this POI
-          const distanceToRoute = getClosestDistanceToRoute(poiLocation, routeCoordinates);
-          
-          // Only keep POIs that are VERY close to the route (within 150m)
-          if (distanceToRoute <= 150) {
-            // Dynamically capture all available fields from the API response
-            const poiData: {
-              [key: string]: any;
-              name: string;
-              location: Location;
-              distanceToRoute: number;
-            } = {
-              name: place.name,
-              location: poiLocation,
-              distanceToRoute,
-              // Capture all available fields from the place object
-              vicinity: place.vicinity || place.formatted_address,
-              rating: place.rating,
-              types: place.types,
-              placeId: place.place_id,
-              photos: place.photos,
-              openingHours: place.opening_hours,
-              businessStatus: place.business_status,
-              formattedAddress: place.formatted_address,
-              geometry: place.geometry,
-              plusCode: place.plus_code,
-              // Include any additional fields that might be present
-              ...place,
-            };
-            allPOIs.push(poiData);
+          if (place.place_id && !rawPlaceMap.has(place.place_id)) {
+            rawPlaceMap.set(place.place_id, place);
           }
         }
       }
@@ -742,9 +800,67 @@ async function findPOIAlongRoute(
     }
   }
   
+  // NOW filter the deduplicated results
+  const allPOIs: Array<{
+    [key: string]: any;
+    name: string;
+    location: Location;
+    distanceToRoute: number;
+  }> = [];
+
+  for (const place of rawPlaceMap.values()) {
+    const poiLocation = {
+      latitude: place.geometry.location.lat,
+      longitude: place.geometry.location.lng,
+    };
+    
+    // Find the closest point on the route to this POI
+    const distanceToRoute = getClosestDistanceToRoute(poiLocation, routeCoordinates);
+    
+    // Check if it's an actual building
+    const isBuilding = isActualBuilding(place.types);
+    
+    // Check if POI is within the logical bounding box of the route
+    const isWithinRouteBounds = isPoiWithinRouteBounds(poiLocation, routeCoordinates);
+    
+    // Only keep POIs that are: 1) close (≤200m), 2) actual buildings, 3) within bounds
+    if (distanceToRoute <= 200 && isBuilding && isWithinRouteBounds) {
+      const poiData: {
+        [key: string]: any;
+        name: string;
+        location: Location;
+        distanceToRoute: number;
+      } = {
+        name: place.name,
+        location: poiLocation,
+        distanceToRoute,
+        vicinity: place.vicinity || place.formatted_address,
+        rating: place.rating,
+        types: place.types,
+        placeId: place.place_id,
+        photos: place.photos,
+        openingHours: place.opening_hours,
+        businessStatus: place.business_status,
+        formattedAddress: place.formatted_address,
+        geometry: place.geometry,
+        plusCode: place.plus_code,
+        ...place,
+      };
+      allPOIs.push(poiData);
+    } else if (distanceToRoute > 200) {
+      console.log(`[findPOIAlongRoute] ℹ️ Filtered: "${place.name}" - too far (${Math.round(distanceToRoute)}m)`);
+    } else if (!isBuilding) {
+      console.log(`[findPOIAlongRoute] ⛔ Filtered: "${place.name}" - open area`);
+    } else if (!isWithinRouteBounds) {
+      console.log(`[findPOIAlongRoute] 🔴 Filtered: "${place.name}" - outside bounds`);
+    }
+  }
+  
   if (allPOIs.length === 0) {
     throw new Error(`No ${interest} POIs found along the route. Try a different interest or area.`);
   }
+  
+  console.log(`[findPOIAlongRoute] ✅ Found ${allPOIs.length} valid POIs (filtered out open areas/plazas)`);
   
   // Remove duplicates by checking if POI already exists in array
   const uniquePOIs: typeof allPOIs = [];
@@ -757,41 +873,60 @@ async function findPOIAlongRoute(
     }
   }
   
-  // Fetch detailed information for top POIs to get opening hours and other details
-  const enhancedPOIs = await Promise.all(
-    uniquePOIs.slice(0, 10).map(async (poi) => {
-      if (poi.placeId) {
-        const details = await fetchPlaceDetails(poi.placeId);
-        if (details) {
-          console.log('Merging details for:', poi.name, {
-            hasOpeningHours: !!details.opening_hours,
-            hasFormattedAddress: !!details.formatted_address,
-          });
-          
-          // Convert opening_hours snake_case to camelCase for consistency
-          let openingHours = details.opening_hours || poi.opening_hours;
-          if (openingHours && openingHours.weekday_text) {
-            openingHours = {
-              ...openingHours,
-              weekdayText: openingHours.weekday_text,
-            };
+  // Fetch detailed information for all POIs with rate limiting
+  // Process in batches of 3 with small delays to respect API quotas
+  const enhancedPOIs: typeof allPOIs = [];
+  const batchSize = 3;
+  const delayMs = 100;
+  
+  for (let i = 0; i < uniquePOIs.length; i += batchSize) {
+    const batch = uniquePOIs.slice(i, i + batchSize);
+    const batchResults = await Promise.all(
+      batch.map(async (poi) => {
+        if (poi.placeId) {
+          try {
+            const details = await fetchPlaceDetails(poi.placeId);
+            if (details) {
+              console.log('Merging details for:', poi.name, {
+                hasOpeningHours: !!details.opening_hours,
+                hasFormattedAddress: !!details.formatted_address,
+              });
+              
+              // Convert opening_hours snake_case to camelCase for consistency
+              let openingHours = details.opening_hours || poi.opening_hours;
+              if (openingHours && openingHours.weekday_text) {
+                openingHours = {
+                  ...openingHours,
+                  weekdayText: openingHours.weekday_text,
+                };
+              }
+              
+              return {
+                ...poi,
+                opening_hours: openingHours,
+                openingHours: openingHours,
+                formattedAddress: details.formatted_address || poi.formattedAddress,
+                business_status: details.business_status || poi.business_status,
+                businessStatus: details.business_status || poi.businessStatus,
+                rating: details.rating || poi.rating,
+                user_ratings_total: details.user_ratings_total || poi.user_ratings_total,
+              };
+            }
+          } catch (error) {
+            console.warn(`Failed to fetch details for ${poi.name}:`, error);
           }
-          
-          return {
-            ...poi,
-            opening_hours: openingHours,
-            openingHours: openingHours,
-            formattedAddress: details.formatted_address || poi.formattedAddress,
-            business_status: details.business_status || poi.business_status,
-            businessStatus: details.business_status || poi.businessStatus,
-            rating: details.rating || poi.rating,
-            user_ratings_total: details.user_ratings_total || poi.user_ratings_total,
-          };
         }
-      }
-      return poi;
-    })
-  );
+        return poi;
+      })
+    );
+    
+    enhancedPOIs.push(...batchResults);
+    
+    // Add delay between batches (except after the last batch)
+    if (i + batchSize < uniquePOIs.length) {
+      await new Promise(resolve => setTimeout(resolve, delayMs));
+    }
+  }
   
   // Sort by distance to route and rating
   enhancedPOIs.sort((a, b) => {
@@ -840,6 +975,36 @@ async function fetchPlaceDetails(placeId: string): Promise<any> {
   }
   
   return null;
+}
+
+/**
+ * Check if a POI is within the logical bounds of the route
+ * This prevents POIs that are technically within 200m but far off to the side
+ */
+function isPoiWithinRouteBounds(poi: Location, routeCoordinates: Location[]): boolean {
+  if (routeCoordinates.length < 2) return true;
+  
+  const start = routeCoordinates[0];
+  const end = routeCoordinates[routeCoordinates.length - 1];
+  
+  // Calculate the bounding box with minimal margin
+  // ~0.002 degrees ≈ 200 meters at equator
+  const latMin = Math.min(start.latitude, end.latitude) - 0.002;
+  const latMax = Math.max(start.latitude, end.latitude) + 0.002;
+  const lonMin = Math.min(start.longitude, end.longitude) - 0.002;
+  const lonMax = Math.max(start.longitude, end.longitude) + 0.002;
+  
+  // Check if POI is within the bounding box (with strict bounds)
+  const isWithinBounds = poi.latitude >= latMin && 
+         poi.latitude <= latMax && 
+         poi.longitude >= lonMin && 
+         poi.longitude <= lonMax;
+
+  if (!isWithinBounds) {
+    console.log(`[isPoiWithinRouteBounds] POI outside bounds: lat=${poi.latitude.toFixed(4)} (${latMin.toFixed(4)}-${latMax.toFixed(4)}), lon=${poi.longitude.toFixed(4)} (${lonMin.toFixed(4)}-${lonMax.toFixed(4)})`);
+  }
+  
+  return isWithinBounds;
 }
 
 /**
@@ -924,13 +1089,14 @@ function bearing(start: Location, end: Location): number {
 async function fetchDetourRoute(
   start: Location | string,
   end: Location | string,
-  waypoint: Location
+  waypoint: Location,
+  mode: 'driving' | 'walking' | 'bicycling' | 'transit' = 'driving'
 ) {
   const origin = typeof start === 'string' ? encodeURIComponent(start) : `${start.latitude},${start.longitude}`;
   const destination = typeof end === 'string' ? encodeURIComponent(end) : `${end.latitude},${end.longitude}`;
   const waypointStr = `${waypoint.latitude},${waypoint.longitude}`;
   
-  const url = `${DIRECTIONS_URL}?origin=${origin}&destination=${destination}&waypoints=${waypointStr}&key=${GOOGLE_MAPS_API_KEY}`;
+  const url = `${DIRECTIONS_URL}?origin=${origin}&destination=${destination}&waypoints=${waypointStr}&mode=${mode}&key=${GOOGLE_MAPS_API_KEY}`;
   
   const response = await fetch(url);
   const data = await response.json();
@@ -943,9 +1109,80 @@ async function fetchDetourRoute(
 }
 
 /**
+ * Calculate the great-circle distance between two coordinates in meters
+ * Uses haversine formula for accurate distance calculation
+ */
+function calculateDistance(loc1: Location, loc2: Location): number {
+  const R = 6371000; // Earth's radius in meters
+  const dLat = toRad(loc2.latitude - loc1.latitude);
+  const dLon = toRad(loc2.longitude - loc1.longitude);
+  const a =
+    Math.sin(dLat / 2) * Math.sin(dLat / 2) +
+    Math.cos(toRad(loc1.latitude)) *
+      Math.cos(toRad(loc2.latitude)) *
+      Math.sin(dLon / 2) *
+      Math.sin(dLon / 2);
+  const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+  return R * c;
+}
+
+/**
+ * Get the closest point on the direct route to a given location
+ * Returns the distance from location to the closest point on the route
+ */
+function getClosestPointOnRoute(location: Location, routeCoordinates: Location[]): { index: number; distance: number } {
+  let minDistance = Infinity;
+  let closestIndex = 0;
+
+  for (let i = 0; i < routeCoordinates.length; i++) {
+    const distance = calculateDistance(location, routeCoordinates[i]);
+    if (distance < minDistance) {
+      minDistance = distance;
+      closestIndex = i;
+    }
+  }
+
+  return { index: closestIndex, distance: minDistance };
+}
+
+/**
+ * Optimize the order of multiple POIs to minimize detour distance
+ * Uses a greedy nearest-neighbor approach with consideration for the direct route path
+ * Ensures POIs are visited in a logical order that doesn't backtrack unnecessarily
+ */
+function optimizePOIOrder(pois: Array<{ location: Location; name: string }>, routeCoordinates: Location[]): Array<{ location: Location; name: string; routeIndex: number }> {
+  console.log(`[optimizePOIOrder] ▼ Input: [${pois.map(p => p.name).join(', ')}], route: ${routeCoordinates.length} pts`);
+  
+  if (pois.length <= 1) {
+    const result = pois.map(poi => ({
+      ...poi,
+      routeIndex: getClosestPointOnRoute(poi.location, routeCoordinates).index,
+    }));
+    console.log(`[optimizePOIOrder] ▲ Single/none, returning as-is`);
+    return result;
+  }
+
+  // Calculate position of each POI on the direct route (0 = start, 1 = end)
+  const poiWithRouteIndex = pois.map(poi => {
+    const { index, distance } = getClosestPointOnRoute(poi.location, routeCoordinates);
+    return {
+      ...poi,
+      routeIndex: index,
+    };
+  });
+
+  // Sort POIs by their position on the direct route
+  // This ensures we visit them in the order they appear along the path
+  const sortedPOIs = poiWithRouteIndex.sort((a, b) => a.routeIndex - b.routeIndex);
+  
+  console.log(`[optimizePOIOrder] ▲ Sorted: [${sortedPOIs.map(p => p.name).join(' → ')}]`);
+  return sortedPOIs;
+}
+
+/**
  * Generate a detour route with a specific POI as waypoint
  * Shows the user what the route looks like if they stop at this POI
- * Always uses walking mode for detours to encourage exploration
+ * Respects the selected transport mode
  */
 export async function generateDetourWithPOI({
   start,
@@ -966,34 +1203,78 @@ export async function generateDetourWithPOI({
   directDistance: number;
   directTime: number;
 }> {
+  console.log(`[generateDetourWithPOI] ▼ POI: "${poi.name}", mode: ${mode}`);
+  
   if (!GOOGLE_MAPS_API_KEY) {
     throw new Error('Google Maps API key is not configured');
   }
 
   try {
-    // Get the direct route (no detour)
+    // Step 1: Get the direct route (no detour)
+    console.log(`[generateDetourWithPOI] Step 1: Fetching direct route...`);
     const directRoute = await fetchDirectRoute(start, end, mode);
+    
+    if (!directRoute.legs || directRoute.legs.length === 0) {
+      throw new Error('Direct route has no legs');
+    }
+    
+    if (!directRoute.legs[0].distance || !directRoute.legs[0].duration) {
+      throw new Error('Direct route missing distance or duration data');
+    }
+    
     const directDistance = directRoute.legs[0].distance.value;
     const directTime = directRoute.legs[0].duration.value;
+    console.log(`[generateDetourWithPOI] Direct: ${directDistance}m, ${directTime}s`);
 
-    // Get the detour route (through POI)
-    const detourRoute = await fetchDetourRoute(start, end, poi.location);
+    // Step 2: Get the detour route (through POI)
+    console.log(`[generateDetourWithPOI] Step 2: Fetching detour route via POI at ${poi.location.latitude.toFixed(4)},${poi.location.longitude.toFixed(4)}...`);
+    const detourRoute = await fetchDetourRoute(start, end, poi.location, mode);
+    
+    if (!detourRoute.legs || detourRoute.legs.length === 0) {
+      throw new Error('Detour route has no legs');
+    }
+    
     const detourDistance = detourRoute.legs.reduce(
-      (sum: number, leg: any) => sum + leg.distance.value,
+      (sum: number, leg: any) => {
+        if (!leg.distance || !leg.distance.value) {
+          console.warn('[generateDetourWithPOI] Warning: leg missing distance value', leg);
+          return sum;
+        }
+        return sum + leg.distance.value;
+      },
       0
     );
     const detourTime = detourRoute.legs.reduce(
-      (sum: number, leg: any) => sum + leg.duration.value,
+      (sum: number, leg: any) => {
+        if (!leg.duration || !leg.duration.value) {
+          console.warn('[generateDetourWithPOI] Warning: leg missing duration value', leg);
+          return sum;
+        }
+        return sum + leg.duration.value;
+      },
       0
     );
+    console.log(`[generateDetourWithPOI] Detour: ${detourDistance}m, ${detourTime}s (+${detourDistance - directDistance}m, +${Math.round((detourTime - directTime) / 60)}min)`);
 
-    // Decode the detour polyline
+    // Step 3: Log route legs for debugging
+    console.log(`[generateDetourWithPOI] Route has ${detourRoute.legs.length} legs:`);
+    detourRoute.legs.forEach((leg: any, idx: number) => {
+      console.log(`  Leg ${idx}: ${leg.start_address} → ${leg.end_address}: ${leg.distance?.value || 0}m`);
+    });
+
+    // Step 4: Decode the detour polyline
+    if (!detourRoute.overview_polyline || !detourRoute.overview_polyline.points) {
+      throw new Error('Detour route missing polyline data');
+    }
+    
     const coordinates = decode(detourRoute.overview_polyline.points);
+    console.log(`[generateDetourWithPOI] Decoded polyline: ${coordinates.length} points`);
 
-    // Extract markers
-    const startCoords = await geocodeLocation(start);
-    const endCoords = await geocodeLocation(end);
-
+    // Step 5: Build markers array
+    if (!detourRoute.legs[0].start_location || !detourRoute.legs[detourRoute.legs.length - 1].end_location) {
+      throw new Error('Detour route missing start or end location');
+    }
+    
     const markers = [
       {
         latitude:
@@ -1019,6 +1300,8 @@ export async function generateDetourWithPOI({
       },
     ];
 
+    console.log(`[generateDetourWithPOI] ▲ COMPLETE - markers:`, markers.map((m, i) => `[${i}] ${m.title}: ${m.latitude.toFixed(4)},${m.longitude.toFixed(4)}`));
+    
     return {
       coordinates,
       encodedPolyline: detourRoute.overview_polyline.points,
@@ -1030,6 +1313,181 @@ export async function generateDetourWithPOI({
     };
   } catch (error) {
     console.error('Error generating detour with POI:', error);
+    throw error;
+  }
+}
+
+/**
+ * Generate an optimized detour route with multiple POIs
+ * Automatically orders POIs based on their position along the direct route
+ * to minimize backtracking and create a logical journey
+ * 
+ * Example: If start is north and end is south, and POI1 is north and POI2 is in between,
+ * the route will be: start → POI1 → POI2 → end (NOT start → POI2 → POI1 → end)
+ */
+export async function generateDetourWithMultiplePOIs({
+  start,
+  end,
+  pois,
+  mode = 'walking',
+}: {
+  start: Location | string;
+  end: Location | string;
+  pois: Array<{ location: Location; name: string }>;
+  mode?: 'driving' | 'walking' | 'bicycling' | 'transit';
+}): Promise<{
+  coordinates: Location[];
+  encodedPolyline: string;
+  markers: any[];
+  extraDistance: number;
+  extraTime: number;
+  directDistance: number;
+  directTime: number;
+  visitOrder: Array<{ location: Location; name: string }>;
+}> {
+  console.log(`[generateDetourWithMultiplePOIs] ▼ POIs: [${pois.map(p => p.name).join(', ')}], mode: ${mode}`);
+  
+  if (!GOOGLE_MAPS_API_KEY) {
+    throw new Error('Google Maps API key is not configured');
+  }
+
+  if (!pois || pois.length === 0) {
+    throw new Error('At least one POI is required');
+  }
+
+  try {
+    // Step 1: Get the direct route to understand the path
+    console.log(`[generateDetourWithMultiplePOIs] Step 1: Direct route...`);
+    const directRoute = await fetchDirectRoute(start, end, mode);
+    
+    // Validate direct route
+    if (!directRoute.legs || directRoute.legs.length === 0) {
+      throw new Error('Direct route has no legs');
+    }
+    if (!directRoute.legs[0].distance || !directRoute.legs[0].duration) {
+      throw new Error('Direct route missing distance or duration data');
+    }
+    
+    const directDistance = directRoute.legs[0].distance.value;
+    const directTime = directRoute.legs[0].duration.value;
+    
+    // Decode the direct route to get route coordinates
+    const directRouteCoordinates = decode(directRoute.overview_polyline.points);
+    console.log(`[generateDetourWithMultiplePOIs] Direct: ${directDistance}m, ${directTime}s, ${directRouteCoordinates.length} pts`);
+
+    // Step 2: Optimize the order of POIs based on their position on the direct route
+    console.log(`[generateDetourWithMultiplePOIs] Step 2: Optimizing...`);
+    const optimizedPOIs = optimizePOIOrder(pois, directRouteCoordinates);
+
+    // Step 3: Build waypoints string with POIs in optimized order
+    const waypointLocations = optimizedPOIs.map(poi => {
+      const lat = typeof poi.location.latitude === 'number' ? poi.location.latitude.toString() : poi.location.latitude;
+      const lon = typeof poi.location.longitude === 'number' ? poi.location.longitude.toString() : poi.location.longitude;
+      console.log(`[generateDetourWithMultiplePOIs] POI "${poi.name}": ${lat},${lon}`);
+      return `${lat},${lon}`;
+    }).join('|');
+    console.log(`[generateDetourWithMultiplePOIs] Waypoints: ${waypointLocations}`);
+
+    // Step 4: Get the detour route with all waypoints in optimal order
+    console.log(`[generateDetourWithMultiplePOIs] Step 3: Fetching optimized route...`);
+    const origin = typeof start === 'string' ? encodeURIComponent(start) : `${(start as Location).latitude},${(start as Location).longitude}`;
+    const destination = typeof end === 'string' ? encodeURIComponent(end) : `${(end as Location).latitude},${(end as Location).longitude}`;
+    
+    console.log(`[generateDetourWithMultiplePOIs] Start (origin): ${origin}`);
+    console.log(`[generateDetourWithMultiplePOIs] End (dest): ${destination}`);
+    
+    const url = `${DIRECTIONS_URL}?origin=${origin}&destination=${destination}&waypoints=${waypointLocations}&mode=${mode}&key=${GOOGLE_MAPS_API_KEY}`;
+    console.log(`[generateDetourWithMultiplePOIs] URL: ${url.substring(0, 150)}...`);
+    
+    const response = await fetch(url);
+    const data = await response.json();
+    
+    if (data.status !== 'OK' || !data.routes || data.routes.length === 0) {
+      console.error(`[generateDetourWithMultiplePOIs] API Error:`, data);
+      throw new Error('Could not generate optimized route with all POIs');
+    }
+    
+    const detourRoute = data.routes[0];
+    
+    // Validate detour route
+    if (!detourRoute.legs || detourRoute.legs.length === 0) {
+      throw new Error('Detour route has no legs');
+    }
+    
+    // Log all legs for debugging
+    console.log(`[generateDetourWithMultiplePOIs] Route has ${detourRoute.legs.length} legs:`);
+    detourRoute.legs.forEach((leg: any, idx: number) => {
+      const distance = leg.distance?.value || 0;
+      console.log(`  Leg ${idx}: ${leg.start_address} → ${leg.end_address}: ${distance}m`);
+    });
+    
+    const detourDistance = detourRoute.legs.reduce(
+      (sum: number, leg: any) => {
+        if (!leg.distance || !leg.distance.value) {
+          console.warn('[generateDetourWithMultiplePOIs] Warning: leg missing distance value', leg);
+          return sum;
+        }
+        return sum + leg.distance.value;
+      },
+      0
+    );
+    const detourTime = detourRoute.legs.reduce(
+      (sum: number, leg: any) => {
+        if (!leg.duration || !leg.duration.value) {
+          console.warn('[generateDetourWithMultiplePOIs] Warning: leg missing duration value', leg);
+          return sum;
+        }
+        return sum + leg.duration.value;
+      },
+      0
+    );
+    console.log(`[generateDetourWithMultiplePOIs] Optimized: ${detourDistance}m, ${detourTime}s (+${detourDistance - directDistance}m, +${Math.round((detourTime - directTime) / 60)}min)`);
+
+    // Step 5: Decode the optimized detour polyline
+    if (!detourRoute.overview_polyline || !detourRoute.overview_polyline.points) {
+      throw new Error('Detour route missing polyline data');
+    }
+    const coordinates = decode(detourRoute.overview_polyline.points);
+
+    // Step 6: Build markers array with start, POIs in order, and end
+    if (!detourRoute.legs[0].start_location || !detourRoute.legs[detourRoute.legs.length - 1].end_location) {
+      throw new Error('Detour route missing start or end location');
+    }
+    
+    const markers = [
+      {
+        latitude: detourRoute.legs[0].start_location.lat,
+        longitude: detourRoute.legs[0].start_location.lng,
+        title: 'Start',
+        description: 'Starting point',
+      },
+      ...optimizedPOIs.map((poi, index) => ({
+        latitude: poi.location.latitude,
+        longitude: poi.location.longitude,
+        title: poi.name,
+        description: `Stop ${index + 1} of ${optimizedPOIs.length}`,
+      })),
+      {
+        latitude: detourRoute.legs[detourRoute.legs.length - 1].end_location.lat,
+        longitude: detourRoute.legs[detourRoute.legs.length - 1].end_location.lng,
+        title: 'End',
+        description: 'Destination',
+      },
+    ];
+
+    console.log(`[generateDetourWithMultiplePOIs] ▲ COMPLETE - visit order: [${optimizedPOIs.map(p => p.name).join(' → ')}]`);
+    return {
+      coordinates,
+      encodedPolyline: detourRoute.overview_polyline.points,
+      markers,
+      extraDistance: detourDistance - directDistance,
+      extraTime: detourTime - directTime,
+      directDistance,
+      directTime,
+      visitOrder: optimizedPOIs,
+    };
+  } catch (error) {
+    console.error(`[generateDetourWithMultiplePOIs] ✗ ERROR:`, error);
     throw error;
   }
 }

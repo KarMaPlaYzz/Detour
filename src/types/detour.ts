@@ -22,6 +22,7 @@ export interface DetourRoute {
   markers: Marker[];
   poi?: POI;
   pois?: POI[];
+  allPOIs?: POI[]; // All discovered POIs for the list (separate from selected pois)
   interest?: string;
   durations?: {
     car?: number;        // seconds
@@ -49,7 +50,30 @@ export interface SavedDetour {
   encodedPolyline: string;
 }
 
-export type Interest = 'Street Art' | 'Architecture' | 'Cafes';
+export type Interest = string; // Now supports any POI type from Google Places API
+
+// UX Blueprint Vibes (7 core vibes per UX_BLUEPRINT_2)
+export type Vibe = 
+  | 'Creative' 
+  | 'Foodie' 
+  | 'Nature Escape' 
+  | 'History Buff' 
+  | 'Nightlife' 
+  | 'Hidden Gems' 
+  | 'Local Favorites';
+
+// Transport modes (UX_BLUEPRINT_2)
+export type TransportMode = 'walking' | 'cycling' | 'driving';
+
+// Vibe metadata for UI display
+export interface VibeOption {
+  id: Vibe;
+  name: string;
+  description: string;
+  icon: string;
+  color: string;
+  gradient?: [string, string];
+}
 
 export interface InterestMapping {
   type?: string;
