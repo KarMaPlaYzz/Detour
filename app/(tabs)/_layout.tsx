@@ -1,12 +1,8 @@
-import { Tabs, useRouter, useSegments } from 'expo-router';
+import { Tabs } from 'expo-router';
 
 import { theme } from '@/styles/theme';
 
 export default function TabLayout() {
-  const router = useRouter();
-  const segments = useSegments();
-  const activeRoute = segments[segments.length - 1];
-
   return (
     <Tabs
       screenOptions={{
@@ -22,15 +18,33 @@ export default function TabLayout() {
         },
       }}>
       <Tabs.Screen
+        name="home"
+        options={{
+          title: 'Home',
+        }}
+      />
+      <Tabs.Screen
         name="index"
         options={{
           title: 'Explore',
         }}
       />
       <Tabs.Screen
+        name="favorites"
+        options={{
+          title: 'Favorites',
+        }}
+      />
+      <Tabs.Screen
         name="my-detours"
         options={{
           title: 'My Detours',
+        }}
+      />
+      <Tabs.Screen
+        name="settings"
+        options={{
+          title: 'Settings',
         }}
       />
     </Tabs>

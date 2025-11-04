@@ -66,12 +66,14 @@ export default function QuickSummaryBar({
 }: QuickSummaryBarProps) {
   if (!visible || !detourRoute) return null;
 
-  const duration = detourRoute.durations?.[selectedTransportMode === 'car' ? 'car' : selectedTransportMode === 'walk' ? 'walk' : selectedTransportMode === 'bike' ? 'bike' : 'transit'];
+  // WALKING MODE POLISH: Always use walking duration
+  const duration = detourRoute.durations?.['walk'];
 
   return (
     <BlurView intensity={45} tint='dark' style={[styles.container]}>
-      {/* Transport Mode Section */}
-      <View style={styles.section}>
+      {/* WALKING MODE POLISH: Removed Transport Mode Section - only walking available */}
+      {/* Transport Mode Section - COMMENTED OUT */}
+      {/* <View style={styles.section}>
         <View style={styles.iconContainer}>
           <MaterialCommunityIcons
             name={getTransportIcon(selectedTransportMode)}
@@ -83,6 +85,23 @@ export default function QuickSummaryBar({
           <Text style={styles.label}>Transport</Text>
           <Text style={styles.value}>
             {getTransportLabel(selectedTransportMode)} • {formatDuration(duration)}
+          </Text>
+        </View>
+      </View> */}
+
+      {/* Walking Duration Info */}
+      <View style={styles.section}>
+        <View style={styles.iconContainer}>
+          <MaterialCommunityIcons
+            name='walk'
+            size={18}
+            color={theme.colors.accent}
+          />
+        </View>
+        <View style={styles.textContainer}>
+          <Text style={styles.label}>Walking</Text>
+          <Text style={styles.value}>
+            {formatDuration(duration)}
           </Text>
         </View>
       </View>
@@ -145,18 +164,18 @@ const styles = StyleSheet.create({
   },
   label: {
     ...theme.typography.caption,
-    color: theme.colors.textSecondaryOnDarkBlur,
+    color: theme.colors.textSecondary,
     fontSize: 11,
     textTransform: 'uppercase',
     letterSpacing: 0.5,
   },
   value: {
     ...theme.typography.bodySemibold,
-    color: theme.colors.textOnDarkBlur,
+    color: theme.colors.textPrimary,
     fontSize: 13,
   },
   valueEmpty: {
-    color: theme.colors.textOnDarkBlur,
+    color: theme.colors.textPrimary,
     fontWeight: '400',
   },
   divider: {

@@ -71,10 +71,13 @@ export default function TransportModeBar({
 }: TransportModeBarProps) {
   if (!visible) return null;
 
+  // WALKING MODE POLISH: Only walking is available
   const transportModes = [
     { mode: 'walk' as const, label: 'Walk', duration: durations.walk },
-    { mode: 'car' as const, label: 'Drive', duration: durations.car },
-    { mode: 'bike' as const, label: 'Bike', duration: durations.bike },
+    // COMMENTED OUT: Driving mode disabled for walking version
+    // { mode: 'car' as const, label: 'Drive', duration: durations.car },
+    // COMMENTED OUT: Cycling mode disabled for walking version
+    // { mode: 'bike' as const, label: 'Bike', duration: durations.bike },
   ];
 
   return (

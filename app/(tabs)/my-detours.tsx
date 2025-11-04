@@ -1,18 +1,20 @@
 import React from 'react';
 import {
-  Alert,
-  FlatList,
-  Modal,
-  StatusBar,
-  StyleSheet,
-  Text,
-  TouchableOpacity,
-  View,
+    Alert,
+    FlatList,
+    Modal,
+    StatusBar,
+    StyleSheet,
+    Text,
+    TouchableOpacity,
+    View,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { FloatingNavigation } from '@/components/FloatingNavigation';
 import MapViewComponent from '@/components/MapViewComponent';
+import { HapticService } from '@/services/HapticService';
+import { PerformanceMonitor } from '@/services/PerformanceMonitor';
 import { decode } from '@/services/PolylineDecoder';
 import { listDetoursLocal, removeDetourLocal } from '@/services/StorageService';
 import { theme } from '@/styles/theme';
@@ -51,7 +53,8 @@ export default function MyDetoursScreen() {
     setRefreshing(false);
   };
 
-  const handleDelete = (detour: SavedDetour) => {
+  const handleDelete = async (detour: SavedDetour) => {
+    await HapticService.mediumImpact();
     Alert.alert(
       'Delete Detour',
       `Are you sure you want to delete "${detour.name}"?`,
@@ -62,12 +65,16 @@ export default function MyDetoursScreen() {
           style: 'destructive',
           onPress: async () => {
             try {
+              PerformanceMonitor.start('deleteDetour');
+              await HapticService.success();
               await removeDetourLocal(detour.id);
               await loadDetours();
               if (selectedDetour?.id === detour.id) {
                 setSelectedDetour(null);
               }
+              PerformanceMonitor.end('deleteDetour');
             } catch (error) {
+              await HapticService.error();
               Alert.alert('Error', 'Failed to delete detour');
             }
           },
@@ -76,7 +83,8 @@ export default function MyDetoursScreen() {
     );
   };
 
-  const handleViewDetour = (detour: SavedDetour) => {
+  const handleViewDetour = async (detour: SavedDetour) => {
+    await HapticService.mediumImpact();
     setSelectedDetour(detour);
   };
 

@@ -35,6 +35,13 @@ export interface DetourRoute {
     bike?: number;       // seconds
     transit?: number;    // seconds
   };
+  elevationProfile?: {
+    minElevation: number;
+    maxElevation: number;
+    elevationGain: number;
+    elevationLoss: number;
+    difficulty: 'easy' | 'moderate' | 'challenging';
+  };
 }
 
 export interface SavedDetour {

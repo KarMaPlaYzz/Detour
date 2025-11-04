@@ -104,11 +104,12 @@ async function geocodeLocation(location: Location | string): Promise<Location | 
 /**
  * Get a basic route without searching for POIs
  * This is the initial search that shows the route and markers
+ * WALKING MODE POLISH: Default changed to walking
  */
 export async function getBasicRoute({
   start,
   end,
-  mode = 'driving',
+  mode = 'walking', // WALKING MODE POLISH: Changed from 'driving' to 'walking'
 }: GetBasicRouteParams): Promise<Omit<DetourRoute, 'poi' | 'pois' | 'interest'>> {
   if (!GOOGLE_MAPS_API_KEY) {
     throw new Error('Google Maps API key is not configured. Please check your .env file.');
@@ -566,7 +567,7 @@ export async function getDetourRoute({
 async function fetchDirectRoute(
   start: Location | string,
   end: Location | string,
-  mode: 'driving' | 'walking' | 'bicycling' | 'transit' = 'driving'
+  mode: 'driving' | 'walking' | 'bicycling' | 'transit' = 'walking' // WALKING MODE POLISH: Changed from 'driving' to 'walking'
 ) {
   const origin = typeof start === 'string' ? encodeURIComponent(start) : `${start.latitude},${start.longitude}`;
   const destination = typeof end === 'string' ? encodeURIComponent(end) : `${end.latitude},${end.longitude}`;
@@ -596,19 +597,18 @@ async function fetchDurationsForAllModes(
   const origin = typeof start === 'string' ? encodeURIComponent(start) : `${start.latitude},${start.longitude}`;
   const destination = typeof end === 'string' ? encodeURIComponent(end) : `${end.latitude},${end.longitude}`;
   
-  const modes = ['driving', 'walking', 'bicycling', 'transit'];
-  const modeMap = { driving: 'car', walking: 'walk', bicycling: 'bike', transit: 'transit' };
+  // WALKING MODE POLISH: Only fetch walking mode
+  const modes = ['walking']; // Commented out: 'driving', 'bicycling', 'transit'
+  const modeMap = { walking: 'walk' }; // Removed: driving: 'car', bicycling: 'bike', transit: 'transit'
   const durations: Record<string, number> = {};
   const durationsWithTraffic: Record<string, number> = {};
   
   // Fetch all modes in parallel
   const promises = modes.map(async (mode) => {
     try {
-      // For driving mode, include departure_time=now to get traffic data
+      // WALKING MODE POLISH: No traffic data for walking
       let url = `${DIRECTIONS_URL}?origin=${origin}&destination=${destination}&mode=${mode}&key=${GOOGLE_MAPS_API_KEY}`;
-      if (mode === 'driving') {
-        url += '&departure_time=now';
-      }
+      // Commented out: if (mode === 'driving') { url += '&departure_time=now'; }
       
       const response = await fetch(url);
       const data = await response.json();
@@ -623,6 +623,7 @@ async function fetchDurationsForAllModes(
           durations[modeKey] = duration;
         }
         
+        // WALKING MODE POLISH: No traffic data for walking
         // Duration with traffic (only available for driving)
         const durationWithTraffic = leg?.duration_in_traffic?.value;
         if (durationWithTraffic !== undefined && durationWithTraffic > 0) {

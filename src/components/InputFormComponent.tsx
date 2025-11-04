@@ -7,6 +7,7 @@ import {
   Animated,
   Keyboard,
   Pressable,
+  ScrollView,
   StyleSheet,
   Text,
   TextInput,
@@ -17,7 +18,6 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { IconSymbol } from '../../components/ui/icon-symbol';
 import BottomSheet from './BottomSheet';
 import InlinePOIList from './InlinePOIList';
-import TransportModeBar from './TransportModeBar';
 
 /**
  * Format duration in seconds to a human-readable string
@@ -60,14 +60,17 @@ function getTrafficColor(normalDuration: number | undefined, trafficDuration: nu
 interface InputFormComponentProps {
   onFindDetour: (start: string, end: string) => void;
   onSearchPOIs?: (interest: string) => void;
+  onSelectInterest?: (interest: string, rawType: string) => void;
   onTransportModeChange?: (mode: 'car' | 'walk' | 'bike' | 'transit') => void;
   onReset?: () => void;
   onSaveDetour?: () => void;
   onSelectPOI?: (poi: any) => void;
+  onOpenFilter?: () => void;
   isLoading?: boolean;
   currentLocation?: Location | null;
   detourRoute?: any | null;
   availablePOITypes?: { [key: string]: string };
+  selectedInterest?: string;
   selectedPOI?: any | null;
   poiCosts?: { [key: string]: { extraTime: number; extraDistance: number } };
 }
@@ -93,14 +96,17 @@ const POI_CATEGORY_MAP: { [key: string]: Interest } = {
 export default function InputFormComponent({
   onFindDetour,
   onSearchPOIs,
+  onSelectInterest,
   onTransportModeChange,
   onReset,
   onSaveDetour,
   onSelectPOI,
+  onOpenFilter,
   isLoading = false,
   currentLocation,
   detourRoute,
   availablePOITypes = {},
+  selectedInterest: selectedInterestProp,
   selectedPOI,
   poiCosts = {},
 }: InputFormComponentProps) {
@@ -691,14 +697,14 @@ export default function InputFormComponent({
                             style={styles.suggestionItem}
                             onPress={() => handleSuggestionSelect(item.fullDescription)}
                           >
-                            <IconSymbol name="location" size={16} color={theme.colors.textTertiaryOnDarkBlur} />
+                            <IconSymbol name="location" size={16} color={theme.colors.textTertiary} />
                             <View style={styles.suggestionContent}>
                               <Text style={styles.suggestionText} numberOfLines={1}>{item.mainText}</Text>
                               {item.secondaryText && (
                                 <Text style={styles.suggestionSecondaryText} numberOfLines={1}>{item.secondaryText}</Text>
                               )}
                             </View>
-                            <IconSymbol name="arrow.up.left" size={14} color={theme.colors.textTertiaryOnDarkBlur} />
+                            <IconSymbol name="arrow.up.left" size={14} color={theme.colors.textTertiary} />
                           </TouchableOpacity>
                         ))}
                       </View>
@@ -724,153 +730,173 @@ export default function InputFormComponent({
               }],
             }}
           >
-            {/* Route Summary - Always Visible Header with Editable Inputs */}
+            {/* Compact Route Summary - Always Visible */}
             <Animated.View 
               style={[
-                styles.routeSummary,
+                styles.compactRouteSummary,
                 {
                   opacity: summaryVisibilityRef.current,
-                  overflow: 'hidden',
                   pointerEvents: isLoading ? 'none' : 'auto',
                 }
               ]}
             >
-              <Animated.View 
-                style={[
-                  styles.summaryContent,
-                  {
-                    opacity: collapseAnimRef.current.interpolate({
-                      inputRange: [0, 0.5, 1],
-                      outputRange: [1, 0.5, 1],
-                    }),
-                  }
-                ]}
-              >
-                <View style={styles.routePoint}>
-                  <IconSymbol name="location.fill" size={20} color={theme.colors.accent} />
-                  <Pressable
-                    style={styles.locationDisplayContainer}
-                    onPress={() => {
-                      setStartInputFocused(true);
-                      startInputRef.current?.focus();
-                    }}
-                    disabled={isLoading}
-                  >
-                    {startInputFocused ? (
-                      <TextInput
-                        ref={startInputRef}
-                        style={styles.locationStartEditInput}
-                        placeholder="Start of your journey"
-                        placeholderTextColor={theme.colors.textTertiary}
-                        value={startInput.split(',')[0]}
-                        onChangeText={(text) => handleStartInputChange(text)}
-                        onFocus={() => setStartInputFocused(true)}
-                        onBlur={() => setStartInputFocused(false)}
-                        autoCapitalize="words"
-                        editable={!isLoading}
-                        selectTextOnFocus={true}
-                      />
-                    ) : (
-                      <>
-                        {startInput.trim() ? (
-                          <>
-                            <Text style={styles.locationMainText} numberOfLines={1}>{startInput.split(',')[0]}</Text>
-                            <Text style={styles.locationSecondaryText} numberOfLines={1}>
-                              {startInput.includes(',') ? startInput.substring(startInput.indexOf(',') + 1).trim() : ''}
-                            </Text>
-                          </>
-                        ) : (
-                          <Text style={styles.locationPlaceholder}>Start of your journey</Text>
-                        )}
-                      </>
-                    )}
-                  </Pressable>
-                </View>
-
-                <Animated.View 
+              {/* Collapsed State - Only destination and interests summary */}
+              {!isFormExpanded && (
+                <Animated.View
                   style={[
-                    styles.routeConnector,
+                    styles.collapsedContent,
                     {
-                      opacity: 1,
+                      opacity: collapseAnimRef.current.interpolate({
+                        inputRange: [0, 1],
+                        outputRange: [1, 0],
+                      }),
                     }
                   ]}
-                />
-
-                <View style={styles.routePoint}>
-                  <IconSymbol name="flag.checkered" size={20} color={theme.colors.secondary} />
-                  <Pressable
-                    style={styles.locationDisplayContainer}
-                    onPress={() => {
-                      setEndInputFocused(true);
-                      endInputRef.current?.focus();
-                    }}
-                    disabled={isLoading}
+                >
+                  <View style={styles.collapsedRoute}>
+                    <IconSymbol name="location" size={16} color={theme.colors.accent} />
+                    <Pressable
+                      style={styles.collapsedDestination}
+                      onPress={() => setIsFormExpanded(true)}
+                      disabled={isLoading}
+                    >
+                      <Text style={styles.collapsedDestinationText} numberOfLines={1}>
+                        {endInput.trim() ? endInput.split(',')[0] : 'Set destination'}
+                      </Text>
+                      {selectedInterestProp && (
+                        <Text style={styles.collapsedInterestText} numberOfLines={1}>
+                          • {selectedInterestProp}
+                        </Text>
+                      )}
+                    </Pressable>
+                  </View>
+                  
+                  <TouchableOpacity 
+                    style={styles.expandButton}
+                    onPress={() => setIsFormExpanded(true)}
+                    activeOpacity={0.7}
                   >
-                    {endInputFocused ? (
-                      <TextInput
-                        ref={endInputRef}
-                        style={styles.locationEndEditInput}
-                        placeholder="End of your journey"
-                        placeholderTextColor={theme.colors.textTertiary}
-                        value={endInput.split(',')[0]}
-                        onChangeText={(text) => handleEndInputChange(text)}
-                        onFocus={() => setEndInputFocused(true)}
-                        onBlur={() => setEndInputFocused(false)}
-                        autoCapitalize="words"
-                        editable={!isLoading}
-                        selectTextOnFocus={true}
-                      />
-                    ) : (
-                      <>
-                        {endInput.trim() ? (
-                          <>
-                            <Text style={styles.locationMainText} numberOfLines={1}>{endInput.split(',')[0]}</Text>
-                            <Text style={styles.locationSecondaryText} numberOfLines={1}>
-                              {endInput.includes(',') ? endInput.substring(endInput.indexOf(',') + 1).trim() : ''}
-                            </Text>
-                          </>
-                        ) : (
-                          <Text style={styles.locationPlaceholder}>End of your journey</Text>
-                        )}
-                      </>
-                    )}
-                  </Pressable>
-                </View>
-              </Animated.View>
+                    <IconSymbol name="chevron.down" size={18} color={theme.colors.textSecondary} />
+                  </TouchableOpacity>
+                </Animated.View>
+              )}
 
-              {/* Toggle Icon Button - Always rendered, always available when route exists */}
-              <Animated.View
-                style={{
-                  opacity: 1,
-                  pointerEvents: 'auto',
-                }}
-              >
-                <TouchableOpacity 
-                  style={styles.toggleButton}
-                  onPress={() => {
-                    setIsFormExpanded(!isFormExpanded);
-                    // Blur inputs when collapsing
-                    if (isFormExpanded) {
+              {/* Expanded State - Full form */}
+              {isFormExpanded && (
+                <Animated.View
+                  style={[
+                    styles.expandedContent,
+                    {
+                      opacity: collapseAnimRef.current,
+                    }
+                  ]}
+                >
+                  <View style={styles.routePoint}>
+                    <IconSymbol name="location.fill" size={20} color={theme.colors.accent} />
+                    <Pressable
+                      style={styles.locationDisplayContainer}
+                      onPress={() => {
+                        setStartInputFocused(true);
+                        startInputRef.current?.focus();
+                      }}
+                      disabled={isLoading}
+                    >
+                      {startInputFocused ? (
+                        <TextInput
+                          ref={startInputRef}
+                          style={styles.locationStartEditInput}
+                          placeholder="Start of your journey"
+                          placeholderTextColor={theme.colors.textTertiary}
+                          value={startInput.split(',')[0]}
+                          onChangeText={(text) => handleStartInputChange(text)}
+                          onFocus={() => setStartInputFocused(true)}
+                          onBlur={() => setStartInputFocused(false)}
+                          autoCapitalize="words"
+                          editable={!isLoading}
+                          selectTextOnFocus={true}
+                        />
+                      ) : (
+                        <>
+                          {startInput.trim() ? (
+                            <>
+                              <Text style={styles.locationMainText} numberOfLines={1}>{startInput.split(',')[0]}</Text>
+                              <Text style={styles.locationSecondaryText} numberOfLines={1}>
+                                {startInput.includes(',') ? startInput.substring(startInput.indexOf(',') + 1).trim() : ''}
+                              </Text>
+                            </>
+                          ) : (
+                            <Text style={styles.locationPlaceholder}>Start of your journey</Text>
+                          )}
+                        </>
+                      )}
+                    </Pressable>
+                  </View>
+
+                  <Animated.View 
+                    style={[
+                      styles.routeConnector,
+                      {
+                        opacity: 1,
+                      }
+                    ]}
+                  />
+
+                  <View style={styles.routePoint}>
+                    <IconSymbol name="flag.checkered" size={20} color={theme.colors.secondary} />
+                    <Pressable
+                      style={styles.locationDisplayContainer}
+                      onPress={() => {
+                        setEndInputFocused(true);
+                        endInputRef.current?.focus();
+                      }}
+                      disabled={isLoading}
+                    >
+                      {endInputFocused ? (
+                        <TextInput
+                          ref={endInputRef}
+                          style={styles.locationEndEditInput}
+                          placeholder="End of your journey"
+                          placeholderTextColor={theme.colors.textTertiary}
+                          value={endInput.split(',')[0]}
+                          onChangeText={(text) => handleEndInputChange(text)}
+                          onFocus={() => setEndInputFocused(true)}
+                          onBlur={() => setEndInputFocused(false)}
+                          autoCapitalize="words"
+                          editable={!isLoading}
+                          selectTextOnFocus={true}
+                        />
+                      ) : (
+                        <>
+                          {endInput.trim() ? (
+                            <>
+                              <Text style={styles.locationMainText} numberOfLines={1}>{endInput.split(',')[0]}</Text>
+                              <Text style={styles.locationSecondaryText} numberOfLines={1}>
+                                {endInput.includes(',') ? endInput.substring(endInput.indexOf(',') + 1).trim() : ''}
+                              </Text>
+                            </>
+                          ) : (
+                            <Text style={styles.locationPlaceholder}>End of your journey</Text>
+                          )}
+                        </>
+                      )}
+                    </Pressable>
+                  </View>
+
+                  {/* Collapse Button */}
+                  <TouchableOpacity 
+                    style={styles.collapseButton}
+                    onPress={() => {
+                      setIsFormExpanded(false);
+                      // Blur inputs when collapsing
                       startInputRef.current?.blur();
                       endInputRef.current?.blur();
-                    }
-                  }}
-                  activeOpacity={0.7}
-                >
-                  <Animated.View
-                    style={{
-                      transform: [{
-                        rotate: collapseAnimRef.current.interpolate({
-                          inputRange: [0, 1],
-                          outputRange: ['0deg', '180deg'],
-                        }),
-                      }],
                     }}
+                    activeOpacity={0.7}
                   >
-                    <IconSymbol name="chevron.down" size={20} color={theme.colors.textSecondary} />
-                  </Animated.View>
-                </TouchableOpacity>
-              </Animated.View>
+                    <IconSymbol name="chevron.up" size={18} color={theme.colors.textSecondary} />
+                  </TouchableOpacity>
+                </Animated.View>
+              )}
             </Animated.View>
 
             {/* Start/End Location Suggestions Dropdown */}
@@ -980,8 +1006,8 @@ export default function InputFormComponent({
                 }}
               >
 
-                {/* Transport Mode Bar */}
-                {detourRoute && (
+                {/* WALKING MODE POLISH: Transport Mode Bar commented out - only walking available */}
+                {/* {detourRoute && (
                   <TransportModeBar
                     selectedTransportMode={selectedTransportMode}
                     onSelectTransportMode={(mode) => {
@@ -992,6 +1018,66 @@ export default function InputFormComponent({
                     visible={true}
                     isLoading={isLoading}
                   />
+                )} */}
+
+                {/* TIER 1 POLISH: Filter Button - Open filter sheet */}
+                {detourRoute && (
+                  <>
+                    {/* Interests Selection - Integrated into expanded form */}
+                    {availablePOITypes && Object.keys(availablePOITypes).length > 0 && (
+                      <View style={styles.interestsSection}>
+                        <Text style={styles.interestsSectionLabel}>Filter by Interest</Text>
+                        <ScrollView
+                          horizontal
+                          showsHorizontalScrollIndicator={false}
+                          contentContainerStyle={styles.interestsScrollContent}
+                          style={styles.interestsScrollView}
+                        >
+                          {Object.values(availablePOITypes).map((displayName) => {
+                            const isActive = selectedInterestProp === displayName;
+                            return (
+                              <TouchableOpacity
+                                key={displayName}
+                                style={[
+                                  styles.interestPill,
+                                  isActive && styles.interestPillActive,
+                                ]}
+                                onPress={() => {
+                                  const rawType = Object.keys(availablePOITypes).find(
+                                    key => availablePOITypes[key] === displayName
+                                  );
+                                  if (rawType) {
+                                    onSelectInterest?.(displayName, rawType);
+                                  }
+                                }}
+                                disabled={isLoading}
+                                activeOpacity={0.7}
+                              >
+                                <Text
+                                  style={[
+                                    styles.interestPillText,
+                                    isActive && styles.interestPillTextActive,
+                                  ]}
+                                  numberOfLines={1}
+                                >
+                                  {displayName}
+                                </Text>
+                              </TouchableOpacity>
+                            );
+                          })}
+                        </ScrollView>
+                      </View>
+                    )}
+
+                    {/*<TouchableOpacity
+                      style={[styles.filterButton, isLoading && styles.filterButtonDisabled]}
+                      onPress={onOpenFilter}
+                      disabled={isLoading}
+                    >
+                      <IconSymbol name="slider.horizontal.3" size={18} color={theme.colors.accent} />
+                      <Text style={styles.filterButtonText}>Filters</Text>
+                    </TouchableOpacity>*/}
+                  </>
                 )}
 
                 {/* Action Buttons
@@ -1174,13 +1260,13 @@ const styles = StyleSheet.create({
 
   suggestionText: {
     ...theme.typography.body,
-    color: theme.colors.textOnDarkBlur,
+    color: theme.colors.textPrimary,
     fontSize: 15,
   },
 
   suggestionSecondaryText: {
     ...theme.typography.caption,
-    color: theme.colors.textTertiaryOnDarkBlur,
+    color: theme.colors.textTertiary,
     fontSize: 12,
     marginTop: 2,
   },
@@ -1499,5 +1585,144 @@ const styles = StyleSheet.create({
     margin: 0,
     flex: 1,
     lineHeight: 0,
+  },
+
+  filterButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: theme.spacing.sm,
+    paddingHorizontal: theme.spacing.lg,
+    paddingVertical: theme.spacing.md,
+    borderRadius: theme.borderRadius.md,
+    borderWidth: 1.5,
+    borderColor: theme.colors.accent,
+    backgroundColor: theme.colors.card,
+    ...theme.shadows.sm,
+  },
+
+  filterButtonDisabled: {
+    opacity: 0.6,
+  },
+
+  filterButtonText: {
+    ...theme.typography.button,
+    color: theme.colors.accent,
+  },
+
+  /* Compact Route Summary Styles */
+  compactRouteSummary: {
+    backgroundColor: theme.colors.card,
+    borderRadius: theme.borderRadius.lg,
+    paddingHorizontal: theme.spacing.md,
+    paddingVertical: theme.spacing.sm,
+    borderWidth: 1,
+    borderColor: theme.colors.cardBorder,
+    ...theme.shadows.sm,
+  },
+
+  collapsedContent: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    minHeight: 48,
+  },
+
+  collapsedRoute: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: theme.spacing.sm,
+  },
+
+  collapsedDestination: {
+    flex: 1,
+    flexDirection: 'column',
+    justifyContent: 'center',
+  },
+
+  collapsedDestinationText: {
+    ...theme.typography.bodySemibold,
+    color: theme.colors.textPrimary,
+  },
+
+  collapsedInterestText: {
+    ...theme.typography.caption,
+    color: theme.colors.accent,
+    marginTop: 2,
+  },
+
+  expandButton: {
+    padding: theme.spacing.sm,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+
+  expandedContent: {
+    gap: theme.spacing.md,
+    paddingVertical: theme.spacing.sm,
+  },
+
+  collapseButton: {
+    alignSelf: 'center',
+    padding: theme.spacing.sm,
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginTop: theme.spacing.sm,
+  },
+
+  /* Interests Section Styles */
+  interestsSection: {
+    backgroundColor: theme.colors.backgroundSecondary,
+    borderRadius: theme.borderRadius.lg,
+    paddingVertical: theme.spacing.md,
+    paddingHorizontal: theme.spacing.md,
+    gap: theme.spacing.sm,
+  },
+
+  interestsSectionLabel: {
+    fontSize: 11,
+    fontWeight: '600',
+    color: theme.colors.textTertiary,
+    textTransform: 'uppercase',
+    letterSpacing: 0.5,
+  },
+
+  interestsScrollView: {
+    flexGrow: 0,
+  },
+
+  interestsScrollContent: {
+    gap: theme.spacing.xs,
+    paddingRight: theme.spacing.md,
+  },
+
+  interestPill: {
+    paddingVertical: 6,
+    paddingHorizontal: theme.spacing.sm,
+    borderRadius: theme.borderRadius.full,
+    backgroundColor: theme.colors.card,
+    borderWidth: 1,
+    borderColor: theme.colors.cardBorder,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    minHeight: 32,
+  },
+
+  interestPillActive: {
+    backgroundColor: theme.colors.accent,
+    borderColor: theme.colors.accent,
+  },
+
+  interestPillText: {
+    fontSize: 11,
+    fontWeight: '500',
+    color: theme.colors.textSecondary,
+    maxWidth: 80,
+  },
+
+  interestPillTextActive: {
+    color: theme.colors.textWhite,
   },
 });

@@ -1,3 +1,4 @@
+import { HapticService } from '@/services/HapticService';
 import { theme } from '@/styles/theme';
 import BlurView from 'expo-blur/build/BlurView';
 import { usePathname, useRouter } from 'expo-router';
@@ -26,6 +27,7 @@ interface CoreButton {
   selectedIcon: string;
   unselectedIcon: string;
   route: string;
+  label: string;
 }
 
 export const FloatingNavigation: React.FC<FloatingNavigationProps> = ({
@@ -82,21 +84,47 @@ export const FloatingNavigation: React.FC<FloatingNavigationProps> = ({
     prevLengthRef.current = dynamicActions.length;
   }, [dynamicActions.length]);
 
-  const isExplore = !pathname.includes('my-detours');
+  const isExplore = !pathname.includes('my-detours') && !pathname.includes('favorites') && !pathname.includes('settings') && !pathname.includes('home');
   const isMyDetours = pathname.includes('my-detours');
+  const isFavorites = pathname.includes('favorites');
+  const isHome = pathname.includes('home');
+  const isSettings = pathname.includes('settings');
 
   const coreButtons: CoreButton[] = [
     {
-      id: 'my-detours',
-      selectedIcon: 'mappin.and.ellipse',
-      unselectedIcon: 'mappin',
-      route: '/(tabs)/my-detours',
+      id: 'home',
+      selectedIcon: 'house.fill',
+      unselectedIcon: 'house',
+      route: '/(tabs)/home',
+      label: 'Home',
+    },
+    {
+      id: 'favorites',
+      selectedIcon: 'heart.fill',
+      unselectedIcon: 'heart',
+      route: '/(tabs)/favorites',
+      label: 'Favorites',
     },
     {
       id: 'explore',
       selectedIcon: 'map.fill',
       unselectedIcon: 'map',
       route: '/(tabs)',
+      label: 'Explore',
+    },
+    {
+      id: 'my-detours',
+      selectedIcon: 'mappin.and.ellipse',
+      unselectedIcon: 'mappin',
+      route: '/(tabs)/my-detours',
+      label: 'Detours',
+    },
+    {
+      id: 'settings',
+      selectedIcon: 'gearshape.fill',
+      unselectedIcon: 'gearshape',
+      route: '/(tabs)/settings',
+      label: 'Settings',
     },
   ];
 
@@ -125,7 +153,10 @@ export const FloatingNavigation: React.FC<FloatingNavigationProps> = ({
                   backgroundColor: action.bgColor || theme.colors.accentLight,
                 },
               ]}
-              onPress={action.onPress}
+              onPress={async () => {
+                await HapticService.mediumImpact();
+                action.onPress();
+              }}
               activeOpacity={0.7}
             >
               <IconSymbol
@@ -147,13 +178,19 @@ export const FloatingNavigation: React.FC<FloatingNavigationProps> = ({
           {coreButtons.map((button) => {
             const isSelected =
               (button.id === 'explore' && isExplore) ||
-              (button.id === 'my-detours' && isMyDetours);
+              (button.id === 'my-detours' && isMyDetours) ||
+              (button.id === 'favorites' && isFavorites) ||
+              (button.id === 'home' && isHome) ||
+              (button.id === 'settings' && isSettings);
 
             return (
               <TouchableOpacity
                 key={button.id}
                 style={[styles.fab, isSelected && styles.fabActive]}
-                onPress={() => router.push(button.route as any)}
+                onPress={async () => {
+                  await HapticService.mediumImpact();
+                  router.push(button.route as any);
+                }}
                 activeOpacity={0.7}
               >
                 <IconSymbol
@@ -183,6 +220,7 @@ const styles = StyleSheet.create({
     position: 'absolute',
     bottom: 20,
     right: 16,
+    left: 16,
     borderRadius: theme.borderRadius.full,
     overflow: 'hidden',
     borderWidth: 1,
@@ -194,11 +232,13 @@ const styles = StyleSheet.create({
     paddingHorizontal: 12,
     paddingVertical: 8,
     alignItems: 'center',
+    justifyContent: 'space-around',
   },
   container: {
     position: 'absolute',
     bottom: 20,
     right: 16,
+    left: 16,
     borderRadius: theme.borderRadius.full,
     paddingHorizontal: 12,
     paddingVertical: 8,
@@ -207,6 +247,7 @@ const styles = StyleSheet.create({
     borderColor: theme.colors.cardBorder,
     ...theme.shadows.lg,
     alignItems: 'center',
+    justifyContent: 'space-around',
   },
   dynamicSection: {
     overflow: 'hidden',
@@ -224,15 +265,17 @@ const styles = StyleSheet.create({
     gap: 4,
     flexDirection: 'row',
     alignItems: 'center',
+    flex: 1,
+    justifyContent: 'space-around',
   },
   fab: {
     alignItems: 'center',
     justifyContent: 'center',
-    paddingHorizontal: 16,
+    paddingHorizontal: 12,
     paddingVertical: 12,
     borderRadius: theme.borderRadius.full,
-    minWidth: 56,
-    minHeight: 56,
+    minWidth: 48,
+    minHeight: 48,
   },
   fabActive: {
     backgroundColor: theme.colors.accentLight,

@@ -1,14 +1,12 @@
 import { theme } from '@/styles/theme';
-import { BlurView } from 'expo-blur';
+import { Ionicons } from '@expo/vector-icons';
 import React from 'react';
 import {
-    ScrollView,
     StyleSheet,
     Text,
     TouchableOpacity,
     View
 } from 'react-native';
-import { IconSymbol } from '../../components/ui/icon-symbol';
 
 interface POIInterestsBarProps {
   visible: boolean;
@@ -18,6 +16,21 @@ interface POIInterestsBarProps {
   onSelectInterest: (interest: string, rawType: string) => void;
   isLoading?: boolean;
 }
+
+// Icon mapping for different interests
+const getIconName = (interest: string): any => {
+  const iconMap: { [key: string]: any } = {
+    'Architecture': 'home',
+    'Street Art': 'brush',
+    'Street Carts': 'restaurant',
+    'Museums': 'library',
+    'Specialty Cafes': 'coffee',
+    'Mixed Drinks': 'wine',
+    'Casual Dining': 'pizza',
+    'Bakeries': 'leaf',
+  };
+  return iconMap[interest] || 'star';
+};
 
 export default function POIInterestsBar({
   visible,
@@ -29,58 +42,51 @@ export default function POIInterestsBar({
 }: POIInterestsBarProps) {
   if (!visible || dynamicInterests.length === 0) return null;
 
+  const renderInterestButton = (displayName: string) => {
+    const rawType = Object.keys(poiTypeMap).find(
+      key => poiTypeMap[key] === displayName
+    );
+    const isActive = selectedInterest === displayName;
+
+    return (
+      <TouchableOpacity
+        key={displayName}
+        style={[
+          styles.button,
+          isActive && styles.buttonActive,
+        ]}
+        onPress={() => {
+          if (rawType) {
+            onSelectInterest(displayName, rawType);
+          }
+        }}
+        disabled={isLoading}
+        activeOpacity={0.7}
+      >
+        <Ionicons
+          name={getIconName(displayName)}
+          size={14}
+          color={isActive ? theme.colors.textWhite : theme.colors.accentLight}
+        />
+        <Text
+          style={[
+            styles.buttonLabel,
+            isActive && styles.buttonLabelActive,
+          ]}
+          numberOfLines={1}
+        >
+          {displayName}
+        </Text>
+      </TouchableOpacity>
+    );
+  };
+
   return (
     <View style={styles.container}>
-      <BlurView intensity={45} tint="dark">
-        <View style={styles.blurView}>
-          {/* Header with "Pick your detour" text */}
-          <View style={styles.header}>
-            <IconSymbol name="sparkles" size={16} color={theme.colors.accent} />
-            <Text style={styles.headerText}>Pick your detour</Text>
-          </View>
-
-          {/* Horizontal scrollable POI interest buttons */}
-          <ScrollView
-            horizontal
-            showsHorizontalScrollIndicator={false}
-            scrollEnabled={dynamicInterests.length > 3}
-            style={styles.scroll}
-            contentContainerStyle={styles.scrollContent}
-          >
-            {dynamicInterests.map((displayName) => {
-              const rawType = Object.keys(poiTypeMap).find(
-                key => poiTypeMap[key] === displayName
-              );
-              const isActive = selectedInterest === displayName;
-
-              return (
-                <TouchableOpacity
-                  key={displayName}
-                  style={[
-                    styles.button,
-                    isActive && styles.buttonActive,
-                  ]}
-                  onPress={() => {
-                    if (rawType) {
-                      onSelectInterest(displayName, rawType);
-                    }
-                  }}
-                  disabled={isLoading}
-                >
-                  <Text
-                    style={[
-                      styles.buttonText,
-                      isActive && styles.buttonTextActive,
-                    ]}
-                  >
-                    {displayName}
-                  </Text>
-                </TouchableOpacity>
-              );
-            })}
-          </ScrollView>
-        </View>
-      </BlurView>
+      <Text style={styles.title}>My Interests</Text>
+      <View style={styles.grid}>
+        {dynamicInterests.map((displayName) => renderInterestButton(displayName))}
+      </View>
     </View>
   );
 }
@@ -90,52 +96,48 @@ const styles = StyleSheet.create({
     marginHorizontal: theme.spacing.md,
     marginTop: theme.spacing.sm,
     marginBottom: theme.spacing.md,
-    borderRadius: theme.borderRadius.lg,
-    borderWidth: 1,
-    borderColor: theme.colors.textTertiary,
-    overflow: 'hidden',
   },
-  blurView: {
-    paddingHorizontal: theme.spacing.md,
-    paddingVertical: theme.spacing.md,
-    gap: theme.spacing.md,
-  },
-  header: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: theme.spacing.sm,
-    marginBottom: theme.spacing.xs,
-  },
-  headerText: {
-    ...theme.typography.bodySemibold,
-    color: theme.colors.textOnDarkBlur,
+  title: {
     fontSize: 14,
+    fontWeight: '600',
+    color: theme.colors.textSecondary,
+    marginBottom: theme.spacing.sm,
+    textTransform: 'uppercase',
+    letterSpacing: 0.5,
   },
-  scroll: {
-    flexGrow: 0,
-  },
-  scrollContent: {
+  grid: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    justifyContent: 'flex-start',
     gap: theme.spacing.sm,
-    paddingRight: theme.spacing.md,
   },
   button: {
-    paddingHorizontal: theme.spacing.lg,
-    paddingVertical: theme.spacing.sm,
+    width: 'auto',
+    paddingVertical: theme.spacing.xs,
+    paddingHorizontal: theme.spacing.sm,
+    alignItems: 'center',
+    justifyContent: 'center',
     borderRadius: theme.borderRadius.full,
-    borderWidth: 1.5,
-    borderColor: theme.colors.textTertiary,
-    backgroundColor: 'rgba(255, 255, 255, 0.05)',
+    backgroundColor: theme.colors.card,
+    borderWidth: 1,
+    borderColor: theme.colors.cardBorder,
+    flexDirection: 'row',
+    gap: 4,
   },
   buttonActive: {
     backgroundColor: theme.colors.accent,
     borderColor: theme.colors.accent,
   },
-  buttonText: {
-    ...theme.typography.buttonSmall,
-    color: theme.colors.textSecondaryOnDarkBlur,
-    fontSize: 13,
+  buttonContent: {
+    marginBottom: 0,
   },
-  buttonTextActive: {
-    color: theme.colors.card,
+  buttonLabel: {
+    fontSize: 11,
+    fontWeight: '500',
+    color: theme.colors.textPrimary,
+    textAlign: 'center',
+  },
+  buttonLabelActive: {
+    color: theme.colors.textWhite,
   },
 });
